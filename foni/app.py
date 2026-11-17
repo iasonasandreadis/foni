@@ -93,6 +93,9 @@ from .text import (
 )
 
 
+UPDATE_EVERY = 6 * 3600  # seconds between update checks (one tiny request to GitHub)
+
+
 # ---------------------------------------------------------------- stats
 
 class Stats:
@@ -192,7 +195,7 @@ class Foni(rumps.App):
         self.update = None            # (version, notes, dmg_url, page_url) when a newer Foni exists
         self.update_shown = None
         self.updating = False         # an update is downloading/installing (clicks wait for it)
-        self.update_checked = time.time() - 86400 + 60  # first check a minute after launch
+        self.update_checked = time.time() - UPDATE_EVERY + 60  # first check a minute after launch
         self.restart_pending = False
         self.muter = SpeakerMuter()   # mutes your sound while you dictate
         self.muter.recover()          # ... and unmutes it if Foni was stopped mid-dictation
@@ -343,8 +346,7 @@ class Foni(rumps.App):
         if self.restart_pending:
             self.restart_pending = False
             self.restart()
-        if self.cfg.get("check_updates", True) and time.time() - self.update_checked > 86400:
-            self.update_checked = time.time()
+        if self._update_check_due(time.time()):
             threading.Thread(target=self._check_updates, daemon=True).start()
         if self.update and self.update_shown != (self.update[0], self.updating):
             first = self.update_shown is None
@@ -722,6 +724,13 @@ class Foni(rumps.App):
         if manual:
             self.updating = False
 
+    def _update_check_due(self, now):
+        """A minute after Foni starts, then every 6 hours (unless turned off in the settings)."""
+        if not self.cfg.get("check_updates", True) or now - self.update_checked < UPDATE_EVERY:
+            return False
+        self.update_checked = now
+        return True
+
     def update_now(self, _=None):
         """Menu → Update to the latest version: one click checks, installs and restarts."""
         if self.updating:
@@ -732,7 +741,7 @@ class Foni(rumps.App):
         threading.Thread(target=self._check_updates, kwargs={"manual": True}, daemon=True).start()
 
     def install_update(self, _=None):
-        """Menu → ⬆︎ Update to Foni x.y.z (shown when the daily check found one)."""
+        """Menu → ⬆︎ Update to Foni x.y.z (shown when the regular check found one)."""
         if self.updating or not self.update:
             return
         self.updating = True

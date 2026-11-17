@@ -1,6 +1,6 @@
 """Updates: check GitHub for a newer Foni, and install it in place.
 
-The check is one small request to GitHub's public API, once a day (menu → Update to the latest
+The check is one small request to GitHub's public API, every 6 hours (menu → Update to the latest
 version does it on demand; "check_updates": false in the settings turns it off). Installing downloads
 the release's Foni.dmg, makes sure it's signed by the same developer as the running Foni (so a
 tampered download is refused, and macOS keeps your permissions), swaps it in and restarts."""

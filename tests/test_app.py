@@ -229,3 +229,14 @@ def test_long_dictation_transcribes_every_piece(monkeypatch):
     text = t.transcribe(np.zeros(16000 * 200, dtype=np.float32))
     assert len(heard) > 2 and text == " ".join(f"part {i}." for i in range(1, len(heard) + 1))
     assert sum(heard) == 16000 * 200 + 2 * int(16000 * 0.15)     # every bit of it, once
+
+
+def test_update_check_a_minute_after_start_then_every_6_hours():
+    from foni.app import UPDATE_EVERY
+    start = 1_000_000.0
+    app = types.SimpleNamespace(cfg={"check_updates": True}, update_checked=start - UPDATE_EVERY + 60)
+    due = Foni._update_check_due.__get__(app)
+    assert not due(start + 30) and due(start + 61)            # a minute after Foni starts
+    assert not due(start + 61 + 5 * 3600) and due(start + 61 + 6 * 3600 + 1)   # then every 6 hours
+    app.cfg["check_updates"] = False
+    assert not due(start + 99 * 3600)                        # never, if you turned it off
