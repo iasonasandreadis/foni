@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foni: a free Wispr Flow alternative for Mac</title>
+<meta name="description" content="Hold Fn, talk, let go: clean text appears wherever you type. Free and open source. Speech to text runs on your Mac; the AI clean-up runs on your own Claude account.">
+<meta property="og:title" content="Foni: talk, it types">
+<meta property="og:description" content="A free, open-source Wispr Flow alternative for Mac. Speech to text on your Mac, AI clean-up on your own Claude account.">
+<meta property="og:image" content="https://jayandreadis.com/foni/img/pill-fire.png">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231b1916'/%3E%3Cg fill='%23f3eee4'%3E%3Crect x='7' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='12' y='9' width='3' height='14' rx='1.5'/%3E%3Crect x='17' y='6' width='3' height='20' rx='1.5'/%3E%3Crect x='22' y='11' width='3' height='10' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f3eee4;
+    --paper-2: #ebe4d6;
+    --ink: #1b1916;
+    --muted: #6b645a;
+    --line: #d9d0c0;
+    --ember: #d4521c;
+    --night: #1c1a17;
+    --serif: "Fraunces", Georgia, serif;
+    --sans: "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 var(--sans); }
+  a { color: inherit; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 22px 0; }
+  .mark { font: 650 26px/1 var(--serif); letter-spacing: -0.02em; text-decoration: none; }
+  .mark span { color: var(--ember); }
+  nav a { margin-left: 22px; font-size: 15px; color: var(--muted); text-decoration: none; }
+  nav a:hover { color: var(--ink); }
+
+  .hero { padding: 72px 0 56px; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; }
+  h1 { font: 650 clamp(52px, 8vw, 96px)/0.95 var(--serif); letter-spacing: -0.035em; margin: 0 0 24px; }
+  h1 em { font-style: normal; color: var(--ember); }
+  .lede { font-size: 20px; line-height: 1.55; max-width: 34em; margin: 0 0 32px; }
+  .cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn { display: inline-block; padding: 14px 22px; border-radius: 10px; font-weight: 600; text-decoration: none; font-size: 16px; }
+  .btn.primary { background: var(--ink); color: var(--paper); }
+  .btn.primary:hover { background: #000; }
+  .btn.ghost { border: 1.5px solid var(--ink); }
+  .fine { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .stage { background: var(--night); border-radius: 18px; aspect-ratio: 336 / 264; display: grid; place-items: end center; overflow: hidden; }
+  .stage img { width: 100%; height: auto; display: block; }
+
+  .price { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 26px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .price div { font-size: 15px; color: var(--muted); }
+  .price b { display: block; font: 650 30px/1.15 var(--serif); color: var(--ink); letter-spacing: -0.02em; margin-bottom: 4px; }
+  .price .us b { color: var(--ember); }
+
+  section { padding: 76px 0 0; }
+  h2 { font: 650 clamp(32px, 4.5vw, 46px)/1.05 var(--serif); letter-spacing: -0.025em; margin: 0 0 14px; }
+  .sub { color: var(--muted); max-width: 40em; margin: 0 0 36px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+  .step { border-top: 2px solid var(--ink); padding-top: 18px; }
+  .step .n { font: 500 13px var(--mono); color: var(--ember); }
+  .step h3 { font: 650 22px/1.2 var(--serif); margin: 6px 0 8px; }
+  .step p { margin: 0; color: #3b3732; }
+  kbd { font: 500 0.82em var(--mono); background: #fff; border: 1px solid var(--line); border-bottom-width: 2.5px; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 16px; }
+  th, td { text-align: left; padding: 14px 14px 14px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 500 13px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  td:first-child { color: var(--muted); width: 26%; }
+  td.us { font-weight: 600; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .note a { color: var(--muted); }
+
+  .looks { background: var(--night); color: var(--paper); margin-top: 76px; padding: 64px 0 56px; }
+  .looks h2 { color: var(--paper); }
+  .looks .sub { color: #a69e91; }
+  .grid7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+  .grid7 figure { margin: 0; }
+  .grid7 img { width: 100%; height: auto; display: block; border-radius: 10px; }
+  .grid7 figcaption { font: 500 12px var(--mono); color: #a69e91; text-align: center; margin-top: 6px; }
+
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
+  .feature { padding: 24px 24px 26px 0; border-bottom: 1px solid var(--line); }
+  .feature h3 { font: 650 20px/1.25 var(--serif); margin: 0 0 6px; }
+  .feature p { margin: 0; color: #3b3732; font-size: 16px; }
+
+  .numbers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .numbers b { display: block; font: 650 clamp(44px, 6vw, 64px)/1 var(--serif); letter-spacing: -0.03em; }
+  .numbers span { color: var(--muted); font-size: 15px; }
+
+  ol.install { padding-left: 1.2em; margin: 0; max-width: 44em; }
+  ol.install li { margin-bottom: 12px; padding-left: 6px; }
+  .faq { max-width: 46em; }
+  .faq h3 { font: 650 20px/1.3 var(--serif); margin: 28px 0 6px; }
+  .faq p { margin: 0; color: #3b3732; }
+
+  footer { margin-top: 90px; padding: 28px 0 40px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; padding-top: 40px; gap: 32px; }
+    .steps, .features, .numbers { grid-template-columns: 1fr; }
+    .price { grid-template-columns: 1fr; gap: 14px; }
+    .grid7 { grid-template-columns: repeat(4, 1fr); }
+    .feature { padding-right: 0; }
+    nav a { margin-left: 14px; }
+  }
+  @media (max-width: 480px) {
+    .wrap { padding: 0 16px; }
+    .grid7 { grid-template-columns: repeat(3, 1fr); }
+    table { font-size: 14px; }
+    td:first-child { width: 30%; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="mark" href="./">Foni<span>.</span></a>
+    <nav><a href="#how">How it works</a><a href="#install">Install</a><a href="https://github.com/iasonasandreadis/foni">GitHub</a></nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <h1>Talk.<br><em>It types.</em></h1>
+      <p class="lede">Hold <kbd>fn</kbd>, say it, let go. Clean text appears wherever you're typing. Foni is a free, open-source alternative to Wispr Flow for Mac. It turns your voice into text on your Mac, and does the AI clean-up on your own Claude account.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg">Download for Mac</a>
+        <a class="btn ghost" href="https://github.com/iasonasandreadis/foni">View the code</a>
+      </div>
+      <p class="fine">Apple Silicon Mac, macOS 14 or later · 165 MB · MIT license</p>
+    </div>
+    <div class="stage"><img src="img/pill-fire.png" alt="Foni's fire pill: a small flame at the bottom of the screen that grows with your voice" width="336" height="264"></div>
+  </div>
+
+  <div class="price">
+    <div><b>$15 a month</b>Wispr Flow Pro, billed monthly</div>
+    <div class="us"><b>Free</b>Foni, with no word limits</div>
+    <div><b>About 2¢ a month</b>Foni's AI clean-up on your own Claude key, at 7 clean-ups a day</div>
+  </div>
+
+  <section id="how">
+    <h2>Three ways to use one key</h2>
+    <p class="sub">Foni lives in your menu bar. While you talk, a small pill at the bottom of the screen shows that it's listening.</p>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h3>Hold and talk</h3><p>Hold <kbd>fn</kbd> and say what you want to write, in any app: Messages, Mail, Notion, Claude, a browser.</p></div>
+      <div class="step"><div class="n">02</div><h3>Let go</h3><p>About half a second later it's typed, cleaned up. The "um"s and stutters are gone, and "Tuesday, no wait, Wednesday" becomes "Wednesday".</p></div>
+      <div class="step"><div class="n">03</div><h3>Ask the AI</h3><p>Hold <kbd>fn</kbd> + <kbd>control</kbd> to give an instruction: "make this more formal", "translate this to Greek", "draft a reply saying I can't make it Friday".</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Foni and Wispr Flow</h2>
+    <p class="sub">Wispr Flow is great. Foni does the same job, for free, with your voice staying on your Mac.</p>
+    <table>
+      <thead><tr><th></th><th>Foni</th><th>Wispr Flow</th></tr></thead>
+      <tbody>
+        <tr><td>Price</td><td class="us">Free</td><td>Pro: $15 a month, or $12 a month billed yearly. The free plan has a weekly word limit.</td></tr>
+        <tr><td>Speech to text</td><td class="us">On your Mac</td><td>In Wispr's cloud</td></tr>
+        <tr><td>Without internet</td><td class="us">Dictation works</td><td>No offline mode</td></tr>
+        <tr><td>AI clean-up</td><td class="us">Your own Claude key, an OpenAI-style service, or a model on your Mac</td><td>Included</td></tr>
+        <tr><td>AI commands by voice</td><td class="us">Included</td><td>Command Mode, on the Pro plan</td></tr>
+        <tr><td>Open source</td><td class="us">Yes (MIT)</td><td>No</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Wispr Flow details from <a href="https://wisprflow.ai/pricing">its pricing page</a>, <a href="https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq">security FAQ</a> and <a href="https://docs.wisprflow.ai/articles/4816967992-how-to-use-command-mode">Command Mode docs</a>, November 2026. Foni isn't affiliated with Wispr.</p>
+  </section>
+</div>
+
+<div class="looks">
+  <div class="wrap">
+    <h2>Pick how it looks</h2>
+    <p class="sub">Seven styles for the listening pill, each reacting to your voice. These are real captures, not mock-ups.</p>
+    <div class="grid7">
+      <figure><img src="img/pill-fire.png" alt="Fire" loading="lazy"><figcaption>Fire</figcaption></figure>
+      <figure><img src="img/pill-bubbles.png" alt="Bubbles" loading="lazy"><figcaption>Bubbles</figcaption></figure>
+      <figure><img src="img/pill-stardust.png" alt="Stardust" loading="lazy"><figcaption>Stardust</figcaption></figure>
+      <figure><img src="img/pill-hearts.png" alt="Hearts" loading="lazy"><figcaption>Hearts</figcaption></figure>
+      <figure><img src="img/pill-minimal.png" alt="Minimal" loading="lazy"><figcaption>Minimal</figcaption></figure>
+      <figure><img src="img/pill-rainbow.png" alt="Rainbow" loading="lazy"><figcaption>Rainbow</figcaption></figure>
+      <figure><img src="img/pill-equalizer.png" alt="Retro equalizer" loading="lazy"><figcaption>Equalizer</figcaption></figure>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section>
+    <h2>Writes like you would</h2>
+    <p class="sub">The parts that make you stop re-reading what it typed.</p>
+    <div class="features">
+      <div class="feature"><h3>A style per app</h3><p>Casual in WhatsApp, formal in email, untouched in code editors and AI chats. Works in Greek too.</p></div>
+      <div class="feature"><h3>Learns your words</h3><p>Fix a misheard word right after dictating, like "rabbits" to "RAM", and Foni remembers it.</p></div>
+      <div class="feature"><h3>Never rewrites you</h3><p>A safety check throws away any AI edit that rewords you, answers you, or drops a question mark.</p></div>
+      <div class="feature"><h3>Your choice of AI</h3><p>Claude with your own key, any OpenAI-style service (OpenAI, OpenRouter, Groq, Ollama), or a free model on your Mac.</p></div>
+      <div class="feature"><h3>25 languages</h3><p>English, Greek, Spanish, French, German and 20 more European languages, detected as you speak.</p></div>
+      <div class="feature"><h3>No text box?</h3><p>If there's nowhere to type, a Copy button appears instead, so nothing you said is lost.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Measured, not promised</h2>
+    <p class="sub">On a MacBook Air M4 with 16 GB, with the AI on Claude Haiku.</p>
+    <div class="numbers">
+      <div><b>0.5 s</b><span>from letting go of the key to the text appearing, for a typical sentence</span></div>
+      <div><b>1.6 GB</b><span>of memory, almost all of it the speech model, kept loaded so dictation is instant</span></div>
+      <div><b>2¢</b><span>a month for Claude clean-up at 7 a day. Clean sentences skip the AI entirely.</span></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install</h2>
+    <p class="sub">About two minutes, plus a one-time 2.5 GB download of the speech model.</p>
+    <ol class="install">
+      <li><a href="https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg">Download Foni.dmg</a>, open it, and drag Foni to Applications.</li>
+      <li>Open Foni. macOS says it can't check the app, because Foni isn't signed with a paid Apple developer account. Go to <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b>.</li>
+      <li>Allow what it asks for: <b>Input Monitoring</b> to notice the key, <b>Accessibility</b> to type for you, and the <b>Microphone</b>.</li>
+      <li>Wait for the speech model to download (the menu bar shows the progress), then hold <kbd>fn</kbd> and talk.</li>
+      <li>Optional: menu bar → <b>AI runs on</b> → <b>Claude</b>, and paste your <a href="https://console.anthropic.com">Claude API key</a>.</li>
+    </ol>
+  </section>
+
+  <section class="faq">
+    <h2>Questions</h2>
+    <h3>Can I use my Claude Pro or Max subscription?</h3>
+    <p>No. Anthropic only lets other apps use Claude through an API key, which is billed separately and pay-as-you-go. For dictation clean-up that comes to cents a month, and Foni's menu shows exactly what you've spent.</p>
+    <h3>Does my voice leave my Mac?</h3>
+    <p>No. Speech to text runs on your Mac. If you choose a cloud AI, only the text of dictations that need cleaning up is sent to it, never the audio.</p>
+    <h3>Is it really free?</h3>
+    <p>Yes. Foni is open source under the MIT license. The only cost is the AI service you choose, and you can avoid that too by running the AI on your Mac.</p>
+    <h3>Which Macs does it run on?</h3>
+    <p>Apple Silicon Macs (M1 or newer) with macOS 14 or later. The speech model uses the Mac's graphics chip.</p>
+  </section>
+
+  <footer>
+    <span>Made by <a href="https://jayandreadis.com">Jay Andreadis</a></span>
+    <span><a href="https://github.com/iasonasandreadis/foni">GitHub</a> · <a href="https://github.com/iasonasandreadis/foni/blob/main/LICENSE">MIT license</a></span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# What Foni needs to run (the app bundles all of it). Speech to text and the Mac AI use MLX,
+# so Foni runs on Apple Silicon Macs only.
+parakeet-mlx==0.7.0
+mlx==0.32.4
+mlx-lm==0.32.2
+huggingface_hub==2.4.0
+numpy==2.5.4
+sounddevice==0.5.6
+rumps==0.4.0
+anthropic==2.7.0
+pyobjc-framework-Quartz==13.0
+pyobjc-framework-Cocoa==13.0
+pyobjc-framework-ApplicationServices==13.0
+pyobjc-framework-ServiceManagement==13.0
