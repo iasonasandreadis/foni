@@ -787,6 +787,11 @@ class EqualizerPill(_Stage):
         CATransaction.commit()
 
 
+# Each style's colour, used for the Copy button's outline so it matches the pill.
+STYLE_ACCENTS = {"fire": (1.0, 0.52, 0.18), "bubbles": (0.35, 0.78, 1.0), "stardust": (0.62, 0.48, 1.0),
+                 "hearts": (1.0, 0.40, 0.60), "minimal": (1.0, 1.0, 1.0), "rainbow": "rainbow",
+                 "equalizer": (0.30, 0.95, 0.45)}
+
 PILL_STYLES = {"fire": Pill, "minimal": MinimalPill, "bubbles": BubblesPill,
                "stardust": StardustPill, "hearts": HeartsPill, "rainbow": RainbowPill,
                "equalizer": EqualizerPill}

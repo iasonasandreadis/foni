@@ -28,7 +28,7 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (165 MB), open it, and drag **Foni** to **Applications**.
 2. Open Foni. macOS says it can't check the app, because Foni isn't signed with a paid Apple developer account. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Foni.
-3. Allow the three permissions it asks for. **Input Monitoring** lets it notice the key, **Accessibility** lets it type for you, and **Microphone** lets it hear you.
+3. Foni opens a setup window with a live checklist. Allow the three permissions: **Microphone** lets it hear you, **Input Monitoring** lets it notice the key, and **Accessibility** lets it type for you (on macOS 27 this one is called **Device Control and Data Access**). If a switch is on but the checklist still shows ✗, click **Reset permissions** in that window.
 4. The first time, Foni downloads its speech model (about 2.5 GB). The menu bar shows the progress.
 
 Tip: in **System Settings → Keyboard**, set "Press 🌐 key to" to "Do Nothing", so Fn doesn't also open the emoji picker.
@@ -45,11 +45,17 @@ Menu bar → **AI runs on**:
 
 Only the text of a dictation that needs the AI is sent, never your audio. Keys are stored in your Mac's Keychain.
 
+## Updates
+
+Foni checks GitHub once a day for a newer version. When there is one, the menu shows **Foni x.y.z is available**: click it, then **Install and restart**. Foni downloads the update, checks it's signed by the same developer, swaps it in and restarts, and your permissions stay on. You can also use **Check for updates…** in the menu, or turn the daily check off with `"check_updates": false` in the settings file.
+
+Coming from 1.0.0–1.0.2 (before the updater existed): download Foni.dmg once more and replace the app.
+
 ## Memory and speed
 
 Measured on a MacBook Air M4 (16 GB), with the AI on Claude:
 
-- About **1.3 GB** of memory, almost all of it the speech model, which stays loaded so dictation is instant.
+- About **1.6 GB** of memory while you use it, almost all of it the speech model, which stays loaded so dictation is instant.
 - About **0.5 s** from letting go of the key to the text appearing, for a typical sentence.
 
 ## Settings

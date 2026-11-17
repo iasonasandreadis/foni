@@ -3,6 +3,7 @@ import time
 from AppKit import (
     NSBezierPath,
     NSColor,
+    NSGradient,
     NSFont,
     NSFontAttributeName,
     NSForegroundColorAttributeName,
@@ -24,6 +25,7 @@ class CopyView(NSView):
             return None
         self.label = "Copy text"
         self.on_click = None
+        self.accent = (1.0, 0.52, 0.18)  # the outline: matches the pill style (see STYLE_ACCENTS)
         return self
 
     def isOpaque(self):
@@ -41,11 +43,21 @@ class CopyView(NSView):
         w, h = b.size.width, b.size.height
         body = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
             NSMakeRect(0.5, 0.5, w - 1, h - 1), (h - 1) / 2, (h - 1) / 2)
-        NSColor.colorWithCalibratedWhite_alpha_(0.05, 0.92).setFill()
-        body.fill()
-        NSColor.colorWithCalibratedRed_green_blue_alpha_(1.0, 0.52, 0.18, 0.55).setStroke()  # ember outline
-        body.setLineWidth_(0.8)
-        body.stroke()
+        if self.accent == "rainbow":  # a rainbow rim: the gradient, then the dark body inset over it
+            NSGradient.alloc().initWithColors_([
+                NSColor.colorWithCalibratedHue_saturation_brightness_alpha_(i / 6, 0.7, 1.0, 0.85)
+                for i in range(7)]).drawInBezierPath_angle_(body, 0)
+            inner = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                NSMakeRect(1.5, 1.5, w - 3, h - 3), (h - 3) / 2, (h - 3) / 2)
+            NSColor.colorWithCalibratedWhite_alpha_(0.05, 1.0).setFill()
+            inner.fill()
+        else:
+            NSColor.colorWithCalibratedWhite_alpha_(0.05, 0.92).setFill()
+            body.fill()
+            r, g, bl = self.accent
+            NSColor.colorWithCalibratedRed_green_blue_alpha_(r, g, bl, 0.6).setStroke()
+            body.setLineWidth_(0.8)
+            body.stroke()
         attrs = {NSFontAttributeName: NSFont.systemFontOfSize_weight_(11.5, 0.3),
                  NSForegroundColorAttributeName: NSColor.whiteColor()}
         s = NSString.stringWithString_(self.label)
@@ -68,6 +80,11 @@ class CopyBubble:
         self.panel.setContentView_(self.view)
         self.text = ""
         self.hide_at = 0.0
+
+    def set_accent(self, accent):
+        """An (r, g, b) colour, or "rainbow", for the outline, to match the pill style."""
+        self.view.accent = accent or (1.0, 0.52, 0.18)
+        self.view.setNeedsDisplay_(True)
 
     def show(self, text):
         self.text = text

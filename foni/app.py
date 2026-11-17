@@ -20,8 +20,6 @@ from Quartz import (
     CGEventTapEnable,
     CGPreflightListenEventAccess,
     CGPreflightPostEventAccess,
-    CGRequestListenEventAccess,
-    CGRequestPostEventAccess,
     kCFRunLoopCommonModes,
     kCGEventFlagsChanged,
     kCGEventKeyDown,
@@ -66,7 +64,9 @@ from .hotkeys import (
 )
 from .learning import Dictionary, _words, find_corrections
 from .models import is_downloaded
-from .pills import PILL_STYLES
+from .pills import PILL_STYLES, STYLE_ACCENTS
+from .setup_window import SetupWindow
+from . import updates
 from .speech import Transcriber
 from .system import (
     element_text,
@@ -177,11 +177,18 @@ class Foni(rumps.App):
         self.pills = {}           # each style's window is made the first time it's used
         self.pill = self._get_pill(self.cfg["pill_style"])
         self.copy_bubble = CopyBubble(anchor=self._pill_anchor)
+        self.copy_bubble.set_accent(STYLE_ACCENTS.get(self.cfg["pill_style"]))
         self.rec_started = 0.0    # when the current recording began
         self.press_id = 0         # identifies a key press, for the delayed start sound
         self.preview_until = 0.0  # Look → "Preview" in the menu
         self.setup_status = None  # "↓ 42%" in the menu bar while a model downloads
-        self.welcome_pending = not self.cfg.get("welcomed")
+        self.welcome_pending = True   # first tick: open the setup window if anything's missing
+        self.setup = None             # the setup window, made when first needed
+        self.setup_refreshed = 0.0
+        self.update = None            # (version, notes, dmg_url, page_url) when a newer Foni exists
+        self.update_shown = None
+        self.update_checked = time.time() - 86400 + 60  # first check a minute after launch
+        self.restart_pending = False
         self.pending_copy = None  # text to offer in the Copy bubble (set by the worker)
         self.pending_toast = None
         self.dictionary = Dictionary()
@@ -218,9 +225,11 @@ class Foni(rumps.App):
         self.login_item = rumps.MenuItem("Open at login", callback=self.toggle_login)
         self.login_item.state = self._login_enabled()
         self.perm_ok = self._check_permissions()
-        self.perm_item = rumps.MenuItem("⚠︎ Needs permission: open System Settings…",
-                                        callback=self.open_permission_settings)
+        self.perm_item = rumps.MenuItem("⚠︎ Needs permission: finish setting up…",
+                                        callback=self.show_setup)
+        self.update_item = rumps.MenuItem("Update available…", callback=self.show_update)
         self.menu = [
+            self.update_item,
             self.perm_item,
             self.hint_item,
             self.command_hint_item,
@@ -239,11 +248,14 @@ class Foni(rumps.App):
             rumps.MenuItem("Edit snippets & settings…", callback=self.open_config),
             self.login_item,
             None,
+            rumps.MenuItem("Setup & permissions…", callback=self.show_setup),
+            rumps.MenuItem("Check for updates…", callback=self.check_updates_now),
             rumps.MenuItem("About Foni…", callback=self.about),
             rumps.MenuItem("Restart Foni", callback=self.restart),
             rumps.MenuItem("Quit Foni", callback=lambda _: rumps.quit_application()),
         ]
         self.perm_item._menuitem.setHidden_(self.perm_ok)
+        self.update_item._menuitem.setHidden_(True)
         if self._bundle() is None:  # running from source: there's no app to open at login
             self.login_item._menuitem.setHidden_(True)
         threading.Thread(target=migrate_old_key, daemon=True).start()
@@ -313,7 +325,25 @@ class Foni(rumps.App):
         self._check_stuck_keys()
         if self.welcome_pending:
             self.welcome_pending = False
-            self._welcome()
+            if not self.cfg.get("welcomed") or not self.perm_ok:
+                self.show_setup()
+            if not self.cfg.get("welcomed"):
+                self.cfg["welcomed"] = True
+                save_config(self.cfg)
+        if self.restart_pending:
+            self.restart_pending = False
+            self.restart()
+        if self.cfg.get("check_updates", True) and time.time() - self.update_checked > 86400:
+            self.update_checked = time.time()
+            threading.Thread(target=self._check_updates, daemon=True).start()
+        if self.update and self.update_shown != self.update[0]:
+            self.update_shown = self.update[0]
+            self.update_item.title = f"⬆︎ Foni {self.update[0]} is available: install…"
+            self.update_item._menuitem.setHidden_(False)
+            self.copy_bubble.toast(f"Foni {self.update[0]} is available (see the menu)", seconds=6)
+        if self.setup is not None and self.setup.visible and time.time() - self.setup_refreshed > 0.5:
+            self.setup_refreshed = time.time()
+            self.setup.refresh()
         if not self.cfg.get("login_asked") and self._bundle():
             self.cfg["login_asked"] = True  # once: open at login (Foni lives in the menu bar)
             save_config(self.cfg)
@@ -647,27 +677,77 @@ class Foni(rumps.App):
     def toggle_login(self, item):
         self._set_login(not self._login_enabled())
 
-    def _welcome(self):
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-        cmd = MODIFIER_NAMES[self.command_mod]
-        rumps.alert(
-            title="Welcome to Foni",
-            message=(f"Hold {pretty(self.hotkeys)}, talk, and let go: your words appear where "
-                     f"you're typing.\n\nHold it + {cmd} to ask the AI to write or rewrite "
-                     "something.\n\nFoni turns speech into text on your Mac. The first time, it "
-                     "downloads its speech model (about 2.5 GB); the menu bar shows the progress.\n\n"
-                     "Next, macOS asks for three permissions: Microphone, Input Monitoring (to "
-                     "notice the key) and Accessibility (to type for you).\n\nTip: in System "
-                     "Settings → Keyboard, set “Press 🌐 key to” to “Do Nothing”, so Fn doesn't "
-                     "also open the emoji picker."),
-            ok="Continue")
-        self.cfg["welcomed"] = True
-        save_config(self.cfg)
-        try:  # asks for the microphone now rather than in the middle of your first dictation
-            self.recorder.start()
-            self.recorder.stop()
+    # ---- updates
+    def _check_updates(self, manual=False):
+        try:
+            info = updates.latest_release()
         except Exception as e:
-            print(f"[mic] {e}")
+            print(f"[update] couldn't check: {type(e).__name__}")
+            if manual:
+                self.pending_toast = "Couldn't check for updates (internet?)"
+            return
+        if info and updates.is_newer(info[0], __version__):
+            print(f"[update] Foni {info[0]} is available")
+            self.update = info
+        elif manual:
+            self.pending_toast = f"Foni {__version__} is the latest version ✓"
+
+    def check_updates_now(self, _=None):
+        self.update_checked = time.time()
+        threading.Thread(target=self._check_updates, kwargs={"manual": True}, daemon=True).start()
+
+    def show_update(self, _=None):
+        if not self.update:
+            return
+        version, notes, dmg, page = self.update
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        short = notes.split("\n\n")[0].replace("**", "")[:400]
+        answer = rumps.alert(title=f"Foni {version} is available",
+                             message=f"You have {__version__}.\n\n{short}",
+                             ok="Install and restart", cancel="Later", other="What's new")
+        if answer == 1:
+            if self._bundle():
+                threading.Thread(target=self._install_update, daemon=True).start()
+            else:
+                subprocess.run(["open", page])
+        elif answer == -1:
+            subprocess.run(["open", page])
+
+    def _install_update(self):
+        version, _, dmg, page = self.update
+        self.pending_toast = f"Downloading Foni {version}…"
+        err = updates.install(dmg, self._bundle(), on_progress=self._progress("update"))
+        self.setup_status = None
+        if err:
+            print(f"[update] not installed: {err}")
+            self.pending_toast = "The update didn't install; opening the download page"
+            subprocess.run(["open", page])
+            return
+        print(f"[update] installed Foni {version}; restarting")
+        self.restart_pending = True  # restart from the main thread
+
+    # ---- setup window
+    def hotkey_name(self):
+        return pretty(self.hotkeys)
+
+    def show_setup(self, _=None):
+        if self.setup is None:
+            self.setup = SetupWindow(self)
+        self.setup.show()
+
+    def reset_permissions(self):
+        """For when a switch in System Settings is on but macOS still says no (it remembers an
+        older copy of Foni): clear Foni's permissions, then start again so you can allow them."""
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        if rumps.alert(title="Reset Foni's permissions?",
+                       message=("This turns off Foni's Microphone, Input Monitoring and "
+                                "Accessibility permissions and restarts Foni, so you can turn them "
+                                "on again. It fixes a switch that's on while Foni still shows ✗."),
+                       ok="Reset and restart", cancel="Cancel") == 1:
+            bundle_id = NSBundle.mainBundle().bundleIdentifier() or "com.jayandreadis.foni"
+            subprocess.run(["tccutil", "reset", "All", bundle_id])
+            print("[perm] permissions reset; restarting")
+            self.restart()
 
     def _recheck_permissions(self):
         """After you allow Foni in System Settings, start listening without a restart."""
@@ -718,6 +798,7 @@ class Foni(rumps.App):
         save_config(self.cfg)
         self.pill.hide()
         self.pill = self._get_pill(key)
+        self.copy_bubble.set_accent(STYLE_ACCENTS.get(key))
         icon = self._style_icon()
         if icon is not None:
             self._icon_nsimage = icon
@@ -797,25 +878,12 @@ class Foni(rumps.App):
     # ---- hotkey (main thread, must be fast)
     @staticmethod
     def _check_permissions():
-        """Ask macOS for keyboard access (hotkey) and typing access (paste); this also puts
-        Foni in both lists in System Settings. The microphone is asked on first use."""
+        """Keyboard access (to notice the hotkey) and typing access (to paste). Missing ones
+        are asked for from the setup window, one button each, not with pop-ups at launch."""
         listen, post = CGPreflightListenEventAccess(), CGPreflightPostEventAccess()
         print(f"[perm] keyboard monitoring: {'ok' if listen else 'MISSING'} · "
               f"typing: {'ok' if post else 'MISSING'}")
-        if not listen:
-            CGRequestListenEventAccess()
-        if not post:
-            CGRequestPostEventAccess()
         return bool(listen and post)
-
-    def open_permission_settings(self, _):
-        pane = "Privacy_ListenEvent" if not CGPreflightListenEventAccess() else "Privacy_Accessibility"
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-        rumps.alert(title="Allow Foni",
-                    message=("In the window that opens, turn on Foni. If it isn't in the list, "
-                             "click + and choose Foni from Applications. Foni notices as soon "
-                             "as you do."), ok="Open System Settings")
-        subprocess.run(["open", f"x-apple.systempreferences:com.apple.preference.security?{pane}"])
 
     def restart(self, _=None):
         app = self._bundle()
