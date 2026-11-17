@@ -26,7 +26,7 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 ## Install
 
-1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (165 MB), open it, and drag **Foni** to **Applications**.
+1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (174 MB), open it, and drag **Foni** to **Applications**.
 2. Open Foni. macOS says it can't check the app, because Foni isn't signed with a paid Apple developer account. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Foni.
 3. Foni opens a setup window with a live checklist. Allow the three permissions: **Microphone** lets it hear you, **Input Monitoring** lets it notice the key, and **Accessibility** lets it type for you (on macOS 27 this one is called **Device Control and Data Access**). If a switch is on but the checklist still shows ✗, click **Reset permissions** in that window.
 4. The first time, Foni downloads its speech model (about 2.5 GB). The menu bar shows the progress.
