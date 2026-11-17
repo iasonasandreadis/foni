@@ -50,10 +50,12 @@
   .stage { background: var(--night); border-radius: 18px; aspect-ratio: 336 / 264; display: grid; place-items: end center; overflow: hidden; }
   .stage img { width: 100%; height: auto; display: block; }
 
-  .price { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 26px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .price div { font-size: 15px; color: var(--muted); }
-  .price b { display: block; font: 650 30px/1.15 var(--serif); color: var(--ink); letter-spacing: -0.02em; margin-bottom: 4px; }
-  .price .us b { color: var(--ember); }
+  .price { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; }
+  .price > div { padding: 26px 24px 26px 0; font-size: 15px; color: var(--muted); }
+  .price > div + div { padding-left: 24px; border-left: 1px solid var(--line); }
+  .price .who { display: block; font: 500 13px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .price b { display: block; font: 650 34px/1.1 var(--serif); color: var(--ink); letter-spacing: -0.02em; margin-bottom: 6px; }
+  .price .us b, .price .us .who { color: var(--ember); }
 
   section { padding: 76px 0 0; }
   h2 { font: 650 clamp(32px, 4.5vw, 46px)/1.05 var(--serif); letter-spacing: -0.025em; margin: 0 0 14px; }
@@ -102,7 +104,8 @@
   @media (max-width: 860px) {
     .hero { grid-template-columns: 1fr; padding-top: 40px; gap: 32px; }
     .steps, .features, .numbers { grid-template-columns: 1fr; }
-    .price { grid-template-columns: 1fr; gap: 14px; }
+    .price { grid-template-columns: 1fr; }
+    .price > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
     .grid7 { grid-template-columns: repeat(4, 1fr); }
     .feature { padding-right: 0; }
     nav a { margin-left: 14px; }
@@ -136,9 +139,8 @@
   </div>
 
   <div class="price">
-    <div><b>$15 a month</b>Wispr Flow Pro, billed monthly</div>
-    <div class="us"><b>Free</b>Foni, with no word limits</div>
-    <div><b>About 2¢ a month</b>Foni's AI clean-up on your own Claude key, at 7 clean-ups a day</div>
+    <div><span class="who">Wispr Flow Pro</span><b>$15 a month</b>Or $12 a month, billed yearly.</div>
+    <div class="us"><span class="who">Foni</span><b>Free</b>No word limits. The optional AI clean-up runs on your own Claude key: about 2¢ a month at 7 clean-ups a day.</div>
   </div>
 
   <section id="how">
@@ -224,7 +226,7 @@
   <section class="faq">
     <h2>Questions</h2>
     <h3>Can I use my Claude Pro or Max subscription?</h3>
-    <p>No. Anthropic only lets other apps use Claude through an API key, which is billed separately and pay-as-you-go. For dictation clean-up that comes to cents a month, and Foni's menu shows exactly what you've spent.</p>
+    <p>Not in Foni. Anthropic doesn't allow apps made by others to offer Claude subscription sign-in without its approval (<a href="https://code.claude.com/docs/en/agent-sdk/overview">its rule</a>), so Foni uses an API key instead. That's billed separately and pay-as-you-go: for dictation clean-up, cents a month, and Foni's menu shows exactly what you've spent.</p>
     <h3>Does my voice leave my Mac?</h3>
     <p>No. Speech to text runs on your Mac. If you choose a cloud AI, only the text of dictations that need cleaning up is sent to it, never the audio.</p>
     <h3>Is it really free?</h3>

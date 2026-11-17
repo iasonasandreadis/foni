@@ -73,10 +73,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "• Signing (ad-hoc)"
-find "$RES" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | xargs -0 codesign --force --sign - 2>/dev/null
-find "$RES/python/bin" -type f -perm +111 -print0 | xargs -0 codesign --force --sign - 2>/dev/null || true
-codesign --force --sign - --identifier com.jayandreadis.foni "$APP"
+# Sign with a stable identity when this Mac has it ("Foni Developer", the release key), so
+# macOS keeps the permissions you gave Foni across updates. Anyone else's build is ad-hoc signed
+# (then macOS asks for the permissions again after each rebuild).
+SIGN="-"
+if security find-identity -p codesigning 2>/dev/null | grep -q '"Foni Developer"'; then SIGN="Foni Developer"; fi
+echo "• Signing ($([ "$SIGN" = "-" ] && echo ad-hoc || echo "$SIGN"))"
+find "$RES" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | xargs -0 codesign --force --sign "$SIGN" 2>/dev/null
+find "$RES/python/bin" -type f -perm +111 -print0 | xargs -0 codesign --force --sign "$SIGN" 2>/dev/null || true
+codesign --force --sign "$SIGN" --identifier com.jayandreadis.foni "$APP"
 codesign --verify --deep --strict "$APP"
 
 echo "• Disk image"
