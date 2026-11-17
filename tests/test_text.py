@@ -120,3 +120,26 @@ def test_learns_a_misheard_word():
 def test_ignores_a_rewrite():
     pasted = "Let's meet on Friday."
     assert find_corrections(pasted, "Let's meet on Monday.", pasted) == []
+
+
+def test_ignores_words_you_add_after_it():
+    # you dictate, then keep typing: that's not a mis-heard word
+    pasted = "I want to make a video about my new app called."
+    for after in ("I want to make a video about my new app called https://jayandreadis.com/foni",
+                  "I want to make a video about my new app called Foni.",
+                  "I want to make a video about my new app, so called."):
+        assert find_corrections(pasted, after, pasted) == [], after
+    pasted = "Ask Steven."
+    assert find_corrections(pasted, "Ask Steven/Alex.", pasted) == []
+
+
+def test_ignores_words_you_cut():
+    pasted = "It was really very good."
+    assert find_corrections(pasted, "It was good.", pasted) == []
+
+
+def test_still_learns_joined_and_split_words():
+    pasted = "Upload it to test flight."
+    assert find_corrections(pasted, "Upload it to TestFlight.", pasted) == [("test flight", "TestFlight")]
+    pasted = "I paid for the clawed subscription."
+    assert find_corrections(pasted, "I paid for the Claude subscription.", pasted) == [("clawed", "Claude")]

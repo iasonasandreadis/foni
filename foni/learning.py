@@ -52,6 +52,16 @@ def _bare(w):
     return re.sub(r"^[^\w]+|[^\w]+$", "", w)
 
 
+def _tokens(s):
+    return re.findall(r"\w+", s.lower())
+
+
+def _contains(big, small):
+    """`small` appears, in order and side by side, inside `big`."""
+    return bool(small) and any(big[k:k + len(small)] == small
+                               for k in range(len(big) - len(small) + 1))
+
+
 # Words you swap for one another when you change your mind, not because they were mis-heard.
 SAME_KIND = (
     {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
@@ -81,6 +91,8 @@ def find_corrections(before, after, pasted):
             continue
         if any(old.lower() in kind and new.lower() in kind for kind in SAME_KIND):
             continue  # Friday -> Monday, 3 -> 4: you changed your mind, it wasn't mis-heard
+        if _contains(_tokens(new), _tokens(old)) or _contains(_tokens(old), _tokens(new)):
+            continue  # "called." -> "called Foni": you added (or cut) words, nothing was mis-heard
         similar = difflib.SequenceMatcher(None, old.lower(), new.lower()).ratio()
         if similar < 0.3 and old[0].lower() != new[0].lower():
             continue  # a different word altogether: a rewrite, not a mis-hearing
