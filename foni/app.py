@@ -1026,6 +1026,8 @@ class Foni(rumps.App):
 
     # ---- models + transcription (one thread: MLX streams are per-thread)
     def _worker(self):
+        import mlx.core as mx
+        mx.set_cache_limit(256 * 1024 * 1024)  # don't hoard freed GPU buffers between dictations
         try:
             self.transcriber = Transcriber(self.cfg, on_progress=self._progress("speech model"))
         except Exception as e:
@@ -1033,8 +1035,9 @@ class Foni(rumps.App):
             self.setup_status = "⚠︎ no speech model (internet?)"
             return
         self.setup_status = None
-        import mlx.core as mx
-        mx.set_cache_limit(256 * 1024 * 1024)  # don't hoard freed GPU buffers between dictations
+        # The model file is full precision; loading halves it. Hand the full-size copy, now
+        # spare, back to macOS right away (~0.5 GB) instead of keeping it in MLX's cache.
+        mx.clear_cache()
         self.state = "idle"
         play("Glass", self.cfg)
         print(f"[ready] {self._hint()} · {self._command_hint()}")

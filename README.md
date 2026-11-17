@@ -49,7 +49,7 @@ Only the text of a dictation that needs the AI is sent, never your audio. Keys a
 
 Measured on a MacBook Air M4 (16 GB), with the AI on Claude:
 
-- About **1.6 GB** of memory, almost all of it the speech model, which stays loaded so dictation is instant.
+- About **1.3 GB** of memory, almost all of it the speech model, which stays loaded so dictation is instant.
 - About **0.5 s** from letting go of the key to the text appearing, for a typical sentence.
 
 ## Settings
