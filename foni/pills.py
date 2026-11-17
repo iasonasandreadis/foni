@@ -98,8 +98,22 @@ def _glow(rect, peak=1.0):
 
 
 def _soft_dot(px=64):
-    """A soft round glow: the particle every flame is built from."""
-    return _particle_image(lambda px: _glow(NSMakeRect(0, 0, px, px)), px)
+    """A soft round glow: the particle every flame is built from. Same glow as filling a px×px
+    square (bright centre, fading by the corners), but drawn on a canvas big enough for it to
+    fade out completely in a circle, so overlapping flames never show square edges.
+    The canvas is FIRE_DOT_GROW times bigger, so particles using it are scaled down to match."""
+    size = int(round(px * FIRE_DOT_GROW))
+    def draw(_):
+        c = size / 2
+        NSGradient.alloc().initWithColors_([
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 1.0),
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.45),
+            NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.0),
+        ]).drawFromCenter_radius_toCenter_radius_options_((c, c), 0, (c, c), c, 0)
+    return _particle_image(draw, size)
+
+
+FIRE_DOT_GROW = 2 ** 0.5  # the old square glow reached its corners at √2 × half its width
 
 
 def _round_dot(px=16):
@@ -281,11 +295,12 @@ class Pill(_Stage):
     def _cells(self, palette):
         base, tip, spark = palette
         hot = tuple(min(1.0, c * 0.35 + 0.72) for c in base)  # near-white heart of the flame
+        g = 1  # same pixel scale as before: the glow keeps its size, it just fades out round
         return [
-            #      name     img       from  to    alpha birth life  lift scale shrink wobble fade
-            _cell("flame", self.dot, base, tip, 0.46, 200, 0.70, 95, 0.20, -0.22, 5, -0.62),
-            _cell("core", self.dot, hot, base, 0.40, 110, 0.32, 70, 0.12, -0.24, 3, -1.2),
-            _cell("spark", self.dot, spark, tip, 1.0, 0, 0.9, 120, 0.04, -0.02, 14, -0.9),
+            #      name     img       from  to    alpha birth life  lift scale     shrink    wobble fade
+            _cell("flame", self.dot, base, tip, 0.46, 200, 0.70, 95, 0.20 * g, -0.22 * g, 5, -0.62),
+            _cell("core", self.dot, hot, base, 0.40, 110, 0.32, 70, 0.12 * g, -0.24 * g, 3, -1.2),
+            _cell("spark", self.dot, spark, tip, 1.0, 0, 0.9, 120, 0.04 * g, -0.02 * g, 14, -0.9),
         ]
 
     def _set_palette(self, mode):

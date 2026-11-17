@@ -140,7 +140,9 @@ def focused_text_target():
                 AXUIElementSetAttributeValue(ax_app, "AXManualAccessibility", True)
                 err, el = AXUIElementCopyAttributeValue(ax_app, "AXFocusedUIElement", None)
         if err != 0 or el is None:
-            return (False if err == AX_NO_VALUE else None), f"ax error {err}"
+            # The app won't say what has focus (some apps never do): we can't tell, so type the
+            # text anyway and offer Copy too, rather than dropping it into a Copy button only.
+            return None, f"ax error {err}"
         role = AXUIElementCopyAttributeValue(el, "AXRole", None)[1]
         if role in TEXT_ROLES:
             return True, role

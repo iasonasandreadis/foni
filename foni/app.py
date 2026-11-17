@@ -189,6 +189,7 @@ class Foni(rumps.App):
         self.update_shown = None
         self.update_checked = time.time() - 86400 + 60  # first check a minute after launch
         self.restart_pending = False
+        self.update_dialog_pending = False  # "Check for updates…" found one: show it right away
         self.pending_copy = None  # text to offer in the Copy bubble (set by the worker)
         self.pending_toast = None
         self.dictionary = Dictionary()
@@ -336,6 +337,12 @@ class Foni(rumps.App):
         if self.cfg.get("check_updates", True) and time.time() - self.update_checked > 86400:
             self.update_checked = time.time()
             threading.Thread(target=self._check_updates, daemon=True).start()
+        if self.update_dialog_pending and self.update:
+            self.update_dialog_pending = False
+            self.update_shown = self.update[0]
+            self.update_item.title = f"⬆︎ Foni {self.update[0]} is available: install…"
+            self.update_item._menuitem.setHidden_(False)
+            self.show_update()
         if self.update and self.update_shown != self.update[0]:
             self.update_shown = self.update[0]
             self.update_item.title = f"⬆︎ Foni {self.update[0]} is available: install…"
@@ -689,6 +696,7 @@ class Foni(rumps.App):
         if info and updates.is_newer(info[0], __version__):
             print(f"[update] Foni {info[0]} is available")
             self.update = info
+            self.update_dialog_pending = manual
         elif manual:
             self.pending_toast = f"Foni {__version__} is the latest version ✓"
 

@@ -64,9 +64,10 @@ def test_missed_release_from_screenshot_shortcut(keys):
     assert drain() == ["press"]
 
 
-def test_keyboard_check_releases_stuck_control_but_not_fn(keys):
+def test_keyboard_check_releases_stuck_control_but_not_fn(keys, monkeypatch):
     app, _, drain = keys
-    app.keys_down = {"left_control"}   # nothing is physically held while the tests run
+    monkeypatch.setattr("foni.app.CGEventSourceFlagsState", lambda state: 0)  # no keys held
+    app.keys_down = {"left_control"}
     app._check_stuck_keys()
     assert drain() == ["chord"] and not app.keys_down
     app.keys_down = {"fn"}

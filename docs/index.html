@@ -7,7 +7,7 @@
 <meta name="description" content="Hold Fn, talk, let go: clean text appears wherever you type. Free and open source. Speech to text runs on your Mac; the AI clean-up runs on your own Claude account.">
 <meta property="og:title" content="Foni: talk, it types">
 <meta property="og:description" content="A free, open-source Wispr Flow alternative for Mac. Speech to text on your Mac, AI clean-up on your own Claude account.">
-<meta property="og:image" content="https://jayandreadis.com/foni/img/pill-fire.png">
+<meta property="og:image" content="https://jayandreadis.com/foni/img/hero-fire.jpg">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231b1916'/%3E%3Cg fill='%23f3eee4'%3E%3Crect x='7' y='13' width='3' height='6' rx='1.5'/%3E%3Crect x='12' y='9' width='3' height='14' rx='1.5'/%3E%3Crect x='17' y='6' width='3' height='20' rx='1.5'/%3E%3Crect x='22' y='11' width='3' height='10' rx='1.5'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,8 +47,19 @@
   .btn.primary:hover { background: #000; }
   .btn.ghost { border: 1.5px solid var(--ink); }
   .fine { margin-top: 14px; font-size: 14px; color: var(--muted); }
-  .stage { background: var(--night); border-radius: 18px; aspect-ratio: 336 / 264; display: grid; place-items: end center; overflow: hidden; }
-  .stage img { width: 100%; height: auto; display: block; }
+  .scene { position: relative; background: #ebe4d9; border-radius: 22px; padding: 26px 22px 0; overflow: hidden;
+           border: 1px solid #e1d8c9; }
+  .msg { background: #fffdf8; border: 1px solid #e3dacb; border-radius: 14px; padding: 12px 16px 16px;
+         box-shadow: 0 1px 0 rgba(27,25,22,0.04); }
+  .msg .who { font: 500 12px var(--mono); color: var(--muted); margin-bottom: 6px; }
+  .typed { font-size: 17px; line-height: 1.45; min-height: 2.9em; margin: 0; }
+  .typed .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--ember); vertical-align: -0.18em;
+                  margin-left: 1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .fire { display: block; width: 100%; height: auto; margin-top: -6%; aspect-ratio: 840 / 560;
+          -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 62%, #000 60%, transparent 100%);
+                  mask-image: radial-gradient(ellipse 62% 58% at 50% 62%, #000 60%, transparent 100%); }
+  .scene .cap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font: 500 12px var(--mono); color: var(--muted); }
 
   .price { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; }
   .price > div { padding: 26px 24px 26px 0; font-size: 15px; color: var(--muted); }
@@ -135,7 +146,14 @@
       </div>
       <p class="fine">Apple Silicon Mac, macOS 14 or later · 174 MB · MIT license</p>
     </div>
-    <div class="stage"><img src="img/pill-fire.png" alt="Foni's fire pill: a small flame at the bottom of the screen that grows with your voice" width="336" height="264"></div>
+    <div class="scene">
+      <div class="msg">
+        <div class="who">Message to Nikos</div>
+        <p class="typed" id="typed" aria-label="Running late, I'll be there in ten minutes. Want me to grab coffee?">Running late, I'll be there in ten minutes. Want me to grab coffee?<span class="caret"></span></p>
+      </div>
+      <video class="fire" src="img/hero-fire.mp4" poster="img/hero-fire.jpg" autoplay muted loop playsinline aria-label="Foni's fire pill, growing with a voice"></video>
+      <div class="cap">Hold fn and talk. The fire listens.</div>
+    </div>
   </div>
 
   <div class="price">
@@ -240,5 +258,22 @@
     <span><a href="https://github.com/iasonasandreadis/foni">GitHub</a> · <a href="https://github.com/iasonasandreadis/foni/blob/main/LICENSE">MIT license</a></span>
   </footer>
 </div>
+<script>
+  // types the example message out, as if dictated; shows it whole if you prefer less motion
+  (function () {
+    var el = document.getElementById('typed');
+    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var text = el.getAttribute('aria-label'), node = el.firstChild;
+    function run() {
+      var i = 0;
+      (function step() {
+        node.nodeValue = text.slice(0, i);
+        if (i++ < text.length) setTimeout(step, i === 1 ? 1600 : 28 + Math.random() * 30);
+        else setTimeout(run, 4200);
+      })();
+    }
+    run();
+  })();
+</script>
 </body>
 </html>
