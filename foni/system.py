@@ -15,11 +15,14 @@ from ApplicationServices import (
 )
 from Quartz import (
     CGEventCreateKeyboardEvent,
+    CGEventGetIntegerValueField,
     CGEventPost,
     CGEventSetFlags,
+    CGEventSetIntegerValueField,
     CGEventSourceFlagsState,
     kCGEventFlagMaskCommand,
     kCGEventSourceStateHIDSystemState,
+    kCGEventSourceUserData,
     kCGHIDEventTap,
 )
 from .hotkeys import CMD, CTRL, FN, OPT, SHIFT
@@ -56,11 +59,32 @@ def wait_for_modifiers_released(timeout=0.6):
         time.sleep(0.015)
 
 
+# Marks the keystrokes Foni sends itself (Cmd+V to type, Cmd+C to read a selection), so its own
+# keyboard watcher doesn't take them for you pressing a key, which would cancel a dictation
+# you'd already started while the last one was still being typed.
+OWN_EVENT = 0x466F6E69  # "Foni"
+_last_sent = 0.0
+
+
 def press_cmd(keycode):
+    global _last_sent
+    _last_sent = time.time()
     for down in (True, False):
         ev = CGEventCreateKeyboardEvent(None, keycode, down)
         CGEventSetFlags(ev, kCGEventFlagMaskCommand)
+        CGEventSetIntegerValueField(ev, kCGEventSourceUserData, OWN_EVENT)
         CGEventPost(kCGHIDEventTap, ev)
+
+
+def is_own_event(event, keycode=None):
+    if CGEventGetIntegerValueField(event, kCGEventSourceUserData) == OWN_EVENT:
+        return True
+    # in case the mark gets lost on the way: Cmd+V / Cmd+C that Foni sent a moment ago
+    return keycode in (8, 9) and sent_recently(0.3)
+
+
+def sent_recently(seconds=0.6):
+    return time.time() - _last_sent < seconds
 
 
 def snapshot_clipboard():
@@ -126,8 +150,17 @@ AX_NO_VALUE = -25212
 
 
 def focused_text_target():
-    """True: a text box has focus. False: definitely nothing to type into. None: can't tell
-    (then we paste anyway, as before)."""
+    """True: a text box has focus. False: it looks like there's nothing to type into. None:
+    can't tell. Apps built on web pages (Claude, Slack, Electron apps) sometimes answer a
+    moment late, so an unsure answer is checked once more."""
+    target, why = _focused_text_target()
+    if target is not True:
+        time.sleep(0.1)
+        target, why = _focused_text_target()
+    return target, why
+
+
+def _focused_text_target():
     try:
         err, el = AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(),
                                                 "AXFocusedUIElement", None)

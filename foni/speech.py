@@ -7,6 +7,24 @@ from .models import model_path
 
 # ---------------------------------------------------------------- speech -> text
 
+def split_at_pauses(audio, longest=90, shortest=45):
+    """Cut a long recording into pieces of `shortest`-`longest` seconds, each cut at the
+    quietest moment (where you paused), so no word is split and nothing has to be stitched."""
+    frame = SAMPLE_RATE // 50  # 20 ms
+    pieces, start = [], 0
+    while len(audio) - start > longest * SAMPLE_RATE:
+        lo = start + shortest * SAMPLE_RATE
+        seg = audio[lo:start + longest * SAMPLE_RATE]
+        n = len(seg) // frame
+        energy = np.sqrt(np.mean(seg[:n * frame].reshape(n, frame) ** 2, axis=1))
+        quiet = np.convolve(energy, np.ones(15), "valid")  # 0.3 s stretches
+        cut = lo + (int(np.argmin(quiet)) + 7) * frame
+        pieces.append(audio[start:cut])
+        start = cut
+    pieces.append(audio[start:])
+    return pieces
+
+
 class Transcriber:
     def __init__(self, cfg, on_progress=None):
         self.cfg = cfg
@@ -34,16 +52,12 @@ class Transcriber:
         return self._whisper(audio)["text"].strip()
 
     def _parakeet(self, audio):
-        if len(audio) > SAMPLE_RATE * 120:  # long dictation: let the library chunk it
-            import tempfile
-            import wave
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                with wave.open(f, "wb") as w:
-                    w.setnchannels(1)
-                    w.setsampwidth(2)
-                    w.setframerate(SAMPLE_RATE)
-                    w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
-            return self.model.transcribe(f.name, chunk_duration=60, overlap_duration=10).text.strip()
+        if len(audio) > SAMPLE_RATE * 120:  # over 2 minutes: in pieces, cut where you paused
+            texts = [self._parakeet_piece(piece) for piece in split_at_pauses(audio)]
+            return " ".join(t for t in texts if t)
+        return self._parakeet_piece(audio)
+
+    def _parakeet_piece(self, audio):
         x = self.mx.array(audio, dtype=self.mx.float32)
         mel = self.get_logmel(x, self.model.preprocessor_config)
         return self.model.generate(mel)[0].text.strip()

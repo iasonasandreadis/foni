@@ -18,9 +18,10 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 - **Clean-up that stays faithful.** It removes "um"s and stutters and keeps only your correction ("Tuesday, no wait, Wednesday" → "Wednesday"). It formats spoken lists and keeps your question marks. A safety check throws away any AI edit that rewords you, answers you, or drops a question.
 - **Only when needed.** By default the AI only touches messy dictation, so clean sentences are instant.
-- **Writing style per app.** Casual in WhatsApp, formal in email, unchanged in code editors and AI chats. Works in Greek too.
+- **Writing style per app.** Casual in WhatsApp and in AI apps like Claude, formal in email, unchanged in code editors. Works in Greek too.
 - **Learns your words.** Fix a misheard word right after dictating (for example "rabbits" → "RAM") and Foni remembers it.
-- **No text box?** A Copy button appears instead.
+- **Always types.** When macOS can't confirm there's a text box, Foni types anyway and also shows a Copy button, so nothing you said is lost.
+- **Mutes your Mac while you talk.** A FaceTime call, a video or music playing doesn't get typed too. Your sound comes back the moment you let go.
 - **Seven looks.** A small pill at the bottom of the screen shows that Foni is listening: Fire, Bubbles, Stardust, Hearts, Minimal, Rainbow or Retro equalizer.
 - **25 languages**, including English, Greek, Spanish, French and German.
 
@@ -47,9 +48,9 @@ Only the text of a dictation that needs the AI is sent, never your audio. Keys a
 
 ## Updates
 
-Foni checks GitHub once a day for a newer version. When there is one, the menu shows **Foni x.y.z is available**: click it, then **Install and restart**. Foni downloads the update, checks it's signed by the same developer, swaps it in and restarts, and your permissions stay on. You can also use **Check for updates…** in the menu, or turn the daily check off with `"check_updates": false` in the settings file.
+Foni checks GitHub once a day for a newer version. When there is one, the menu shows **Update to Foni x.y.z**: one click downloads it, checks it's signed by the same developer, swaps it in and restarts, and your permissions stay on. **Update to the latest version** in the menu does the same on demand. Turn the daily check off with `"check_updates": false` in the settings file.
 
-Coming from 1.0.0–1.0.2 (before the updater existed): download Foni.dmg once more and replace the app.
+Coming from 1.0.0–1.0.2 (before the updater existed): download Foni.dmg once more and replace the app. On 1.0.3–1.0.5 the menu item is called **Check for updates…**, then **Install and restart**.
 
 ## Memory and speed
 

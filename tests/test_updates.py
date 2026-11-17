@@ -1,7 +1,6 @@
 """Update checks, and installing an update (with a real signed test app when this Mac can)."""
 import io
 import json
-import os
 import pathlib
 import plistlib
 import shutil
@@ -84,4 +83,28 @@ def test_install_refuses_a_differently_signed_download(tmp_path):
     assert err == "the download isn't signed by Foni's developer"
     info = plistlib.load(open(installed / "Contents/Info.plist", "rb"))
     assert info["CFBundleShortVersionString"] == "1.0.0"   # untouched
-    assert not os.path.exists(installed.parent / ".Foni-update.app")
+    assert not list(installed.parent.glob(".Foni-update*.app"))
+
+
+def test_only_one_install_at_a_time(tmp_path, monkeypatch):
+    # clicking Update five times must not start five installs that delete each other's files
+    import threading
+    started, finish = threading.Event(), threading.Event()
+
+    def slow_install(*args):
+        started.set()
+        finish.wait(5)
+    monkeypatch.setattr(updates, "_install", slow_install)
+    first = threading.Thread(target=updates.install, args=("url", str(tmp_path / "Foni.app")))
+    first.start()
+    started.wait(5)
+    assert updates.install("url", str(tmp_path / "Foni.app")) == updates.BUSY
+    finish.set()
+    first.join(5)
+    assert updates.install("url", str(tmp_path / "Foni.app")) is None  # free again afterwards
+
+
+def test_install_clears_half_copied_leftovers(tmp_path):
+    (tmp_path / ".Foni-update.app/Contents").mkdir(parents=True)   # left by an older Foni
+    err = updates.install((tmp_path / "missing.dmg").as_uri(), str(tmp_path / "Foni.app"))
+    assert err and not list(tmp_path.glob(".Foni-update*.app"))

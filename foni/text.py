@@ -48,18 +48,22 @@ STYLE_GROUPS = (  # (setting, menu label, apps)
     ("work", "Work messages", ("Slack", "Microsoft Teams", "Teams", "Google Chat", "Mattermost")),
     ("email", "Email", ("Mail", "Outlook", "Microsoft Outlook", "Spark", "Spark Desktop",
                         "Airmail", "Superhuman", "Mimestream", "Canary Mail")),
+    # AI chats, and the terminals Claude Code and Codex run in
+    ("ai", "AI apps and terminals", ("Claude", "ChatGPT", "Grok", "Grok Bot", "Perplexity",
+                                     "Gemini", "T3 Code (Alpha)", "Codex", "Terminal", "iTerm2",
+                                     "Warp", "Ghostty")),
     ("other", "Other apps", ()),
 )
-# Never restyled: code, terminals and AI chats need your words exactly as said.
-UNSTYLED_APPS = set(APP_STYLES[2][0]) | {"Claude", "ChatGPT", "Grok", "Perplexity", "Gemini",
-                                         "T3 Code (Alpha)", "Codex"}
+# Never restyled: code editors need your words exactly as said.
+UNSTYLED_APPS = set(APP_STYLES[2][0]) - set(STYLE_GROUPS[3][2])
 WRITING_STYLES = {  # setting: (short name, menu label)
     "formal": ("Formal", "Formal: as you said it, with full stops"),
     "casual": ("Casual", "Casual: no full stop at the end"),
     "very_casual": ("Very casual", "Very casual: no capitals, no full stop"),
     "excited": ("Excited", "Excited: ends with !"),
 }
-STYLE_CHOICES = {"personal": ("formal", "casual", "very_casual")}  # others: formal/casual/excited
+STYLE_CHOICES = {"personal": ("formal", "casual", "very_casual"),  # others: formal/casual/excited
+                 "ai": ("formal", "casual", "very_casual")}
 SENTENCE_START_RE = re.compile(r"(^|[.!?;]\s+|\n\s*(?:[-•*]\s+|\d+[.)]\s+)?)([^\W\d_][\w'’]*)")
 
 

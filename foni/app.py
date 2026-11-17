@@ -49,6 +49,7 @@ from .audio import Recorder, SAMPLE_RATE, has_speech
 from .bubble import CopyBubble
 from .config import (
     CONFIG_PATH,
+    DEFAULT_CONFIG,
     HISTORY_PATH,
     LEARNED_PATH,
     load_config,
@@ -67,6 +68,7 @@ from .models import is_downloaded
 from .pills import PILL_STYLES, STYLE_ACCENTS
 from .setup_window import SetupWindow
 from . import updates
+from .speakers import SpeakerMuter
 from .speech import Transcriber
 from .system import (
     element_text,
@@ -74,8 +76,10 @@ from .system import (
     focused_text_target,
     frontmost_app,
     grab_selection,
+    is_own_event,
     play,
     restore_clipboard,
+    sent_recently,
     type_text,
     wait_for_modifiers_released,
 )
@@ -187,9 +191,11 @@ class Foni(rumps.App):
         self.setup_refreshed = 0.0
         self.update = None            # (version, notes, dmg_url, page_url) when a newer Foni exists
         self.update_shown = None
+        self.updating = False         # an update is downloading/installing (clicks wait for it)
         self.update_checked = time.time() - 86400 + 60  # first check a minute after launch
         self.restart_pending = False
-        self.update_dialog_pending = False  # "Check for updates…" found one: show it right away
+        self.muter = SpeakerMuter()   # mutes your sound while you dictate
+        self.muter.recover()          # ... and unmutes it if Foni was stopped mid-dictation
         self.pending_copy = None  # text to offer in the Copy bubble (set by the worker)
         self.pending_toast = None
         self.dictionary = Dictionary()
@@ -225,10 +231,12 @@ class Foni(rumps.App):
         self.hotkey_menu.add(rumps.MenuItem("Reset to Fn only", callback=self.reset_hotkeys))
         self.login_item = rumps.MenuItem("Open at login", callback=self.toggle_login)
         self.login_item.state = self._login_enabled()
+        self.mute_item = rumps.MenuItem("Mute sound while dictating", callback=self.toggle_mute)
+        self.mute_item.state = self.cfg.get("mute_while_dictating", True)
         self.perm_ok = self._check_permissions()
         self.perm_item = rumps.MenuItem("⚠︎ Needs permission: finish setting up…",
                                         callback=self.show_setup)
-        self.update_item = rumps.MenuItem("Update available…", callback=self.show_update)
+        self.update_item = rumps.MenuItem("Update", callback=self.install_update)
         self.menu = [
             self.update_item,
             self.perm_item,
@@ -247,13 +255,14 @@ class Foni(rumps.App):
             rumps.MenuItem("Copy last dictation", callback=self.copy_last),
             self._dictionary_item(),
             rumps.MenuItem("Edit snippets & settings…", callback=self.open_config),
+            self.mute_item,
             self.login_item,
             None,
             rumps.MenuItem("Setup & permissions…", callback=self.show_setup),
-            rumps.MenuItem("Check for updates…", callback=self.check_updates_now),
+            rumps.MenuItem("Update to the latest version", callback=self.update_now),
             rumps.MenuItem("About Foni…", callback=self.about),
             rumps.MenuItem("Restart Foni", callback=self.restart),
-            rumps.MenuItem("Quit Foni", callback=lambda _: rumps.quit_application()),
+            rumps.MenuItem("Quit Foni", callback=self.quit),
         ]
         self.perm_item._menuitem.setHidden_(self.perm_ok)
         self.update_item._menuitem.setHidden_(True)
@@ -337,17 +346,17 @@ class Foni(rumps.App):
         if self.cfg.get("check_updates", True) and time.time() - self.update_checked > 86400:
             self.update_checked = time.time()
             threading.Thread(target=self._check_updates, daemon=True).start()
-        if self.update_dialog_pending and self.update:
-            self.update_dialog_pending = False
-            self.update_shown = self.update[0]
-            self.update_item.title = f"⬆︎ Foni {self.update[0]} is available: install…"
+        if self.update and self.update_shown != (self.update[0], self.updating):
+            first = self.update_shown is None
+            self.update_shown = (self.update[0], self.updating)
+            version = self.update[0]
+            # one click installs it; while it installs, the item is greyed out so it can't run twice
+            self.update_item.title = (f"Updating to Foni {version}…" if self.updating
+                                      else f"⬆︎ Update to Foni {version}")
+            self.update_item.set_callback(None if self.updating else self.install_update)
             self.update_item._menuitem.setHidden_(False)
-            self.show_update()
-        if self.update and self.update_shown != self.update[0]:
-            self.update_shown = self.update[0]
-            self.update_item.title = f"⬆︎ Foni {self.update[0]} is available: install…"
-            self.update_item._menuitem.setHidden_(False)
-            self.copy_bubble.toast(f"Foni {self.update[0]} is available (see the menu)", seconds=6)
+            if first and not self.updating:
+                self.copy_bubble.toast(f"Foni {version} is available: Update is in the menu", seconds=6)
         if self.setup is not None and self.setup.visible and time.time() - self.setup_refreshed > 0.5:
             self.setup_refreshed = time.time()
             self.setup.refresh()
@@ -504,16 +513,19 @@ class Foni(rumps.App):
             self.writing_items[group] = (sub, label, items)
             self.writing_menu.add(sub)
         self.writing_menu.add(None)
-        self.writing_menu.add(rumps.MenuItem("Code editors and AI chats always stay as you said them"))
+        self.writing_menu.add(rumps.MenuItem("Code editors always stay as you said them"))
         self._refresh_writing_menu()
 
     def _refresh_writing_menu(self):
-        styles = self.cfg.get("app_styles") or {}
         for group, (sub, label, items) in self.writing_items.items():
-            current = styles.get(group, "formal")
+            current = self._style_setting(group)
             for key, item in items.items():
                 item.state = key == current
             sub.title = f"{label}: {WRITING_STYLES.get(current, WRITING_STYLES['formal'])[0]}"
+
+    def _style_setting(self, group):
+        styles = self.cfg.get("app_styles") or {}
+        return styles.get(group) or DEFAULT_CONFIG["app_styles"].get(group, "formal")
 
     def set_writing_style(self, item):
         styles = dict(self.cfg.get("app_styles") or {})
@@ -684,6 +696,11 @@ class Foni(rumps.App):
     def toggle_login(self, item):
         self._set_login(not self._login_enabled())
 
+    def toggle_mute(self, item):
+        item.state = not item.state
+        self.cfg["mute_while_dictating"] = bool(item.state)
+        save_config(self.cfg)
+
     # ---- updates
     def _check_updates(self, manual=False):
         try:
@@ -691,43 +708,51 @@ class Foni(rumps.App):
         except Exception as e:
             print(f"[update] couldn't check: {type(e).__name__}")
             if manual:
+                self.updating = False
                 self.pending_toast = "Couldn't check for updates (internet?)"
             return
         if info and updates.is_newer(info[0], __version__):
             print(f"[update] Foni {info[0]} is available")
             self.update = info
-            self.update_dialog_pending = manual
+            if manual:  # you asked for the latest version: install it right away
+                self._install_update()
+                return
         elif manual:
             self.pending_toast = f"Foni {__version__} is the latest version ✓"
+        if manual:
+            self.updating = False
 
-    def check_updates_now(self, _=None):
+    def update_now(self, _=None):
+        """Menu → Update to the latest version: one click checks, installs and restarts."""
+        if self.updating:
+            self.pending_toast = "Already updating…"
+            return
+        self.updating = True  # set right away, so a second click can't start another one
         self.update_checked = time.time()
         threading.Thread(target=self._check_updates, kwargs={"manual": True}, daemon=True).start()
 
-    def show_update(self, _=None):
-        if not self.update:
+    def install_update(self, _=None):
+        """Menu → ⬆︎ Update to Foni x.y.z (shown when the daily check found one)."""
+        if self.updating or not self.update:
             return
-        version, notes, dmg, page = self.update
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
-        short = notes.split("\n\n")[0].replace("**", "")[:400]
-        answer = rumps.alert(title=f"Foni {version} is available",
-                             message=f"You have {__version__}.\n\n{short}",
-                             ok="Install and restart", cancel="Later", other="What's new")
-        if answer == 1:
-            if self._bundle():
-                threading.Thread(target=self._install_update, daemon=True).start()
-            else:
-                subprocess.run(["open", page])
-        elif answer == -1:
-            subprocess.run(["open", page])
+        self.updating = True
+        threading.Thread(target=self._install_update, daemon=True).start()
 
     def _install_update(self):
         version, _, dmg, page = self.update
-        self.pending_toast = f"Downloading Foni {version}…"
-        err = updates.install(dmg, self._bundle(), on_progress=self._progress("update"))
+        app = self._bundle()
+        if not app:  # running from source: nothing to swap
+            subprocess.run(["open", page])
+            self.updating = False
+            return
+        self.pending_toast = f"Updating to Foni {version}…"
+        err = updates.install(dmg, app, on_progress=self._progress("update"))
         self.setup_status = None
+        if err == updates.BUSY:
+            return
         if err:
             print(f"[update] not installed: {err}")
+            self.updating = False
             self.pending_toast = "The update didn't install; opening the download page"
             subprocess.run(["open", page])
             return
@@ -894,11 +919,18 @@ class Foni(rumps.App):
         return bool(listen and post)
 
     def restart(self, _=None):
+        print("[restart] restarting Foni")
+        self.muter.restore()
         app = self._bundle()
         if app:  # start a fresh copy once this one has quit
             subprocess.Popen(["/bin/sh", "-c", f"sleep 1; open -n '{app}'"], start_new_session=True)
         else:
             print("[restart] running from source; start it again yourself")
+        rumps.quit_application()
+
+    def quit(self, _=None):
+        print("[quit] Foni was quit from its menu")
+        self.muter.restore()
         rumps.quit_application()
 
     def _install_tap(self):
@@ -940,7 +972,7 @@ class Foni(rumps.App):
         """Every tick: is the hotkey still physically held? (Fn isn't checked here: macOS
         doesn't reliably report it outside key events; any key press still catches it.)"""
         held = [n for n in self.keys_down if n != "fn"]
-        if held:
+        if held and not sent_recently():  # Foni's own Cmd+V can briefly look like that
             flags = CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState)
             if any(not flags & HOTKEYS[n][2] for n in held):
                 self._missed_release(flags | (FN if "fn" in self.keys_down else 0), "keyboard check")
@@ -949,6 +981,8 @@ class Foni(rumps.App):
         if etype in (kCGEventTapDisabledByTimeout, kCGEventTapDisabledByUserInput):
             CGEventTapEnable(self.tap, True)
             return event
+        if is_own_event(event, CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)):
+            return event  # Foni's own Cmd+V / Cmd+C, not you pressing a key
         if self.keys_down:  # every key event carries the keys held right now
             own = (None if etype == kCGEventKeyDown else
                    KEYCODE_TO_NAME.get(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)))
@@ -1027,23 +1061,38 @@ class Foni(rumps.App):
                         play("Pop", self.cfg)
                     else:
                         last_tap = t
-                        self.recorder.stop()
-                        self.state = "idle"
+                        self._stop_recording("idle")
                 else:
                     self._finish()
             elif kind == "chord" and self.state == "recording":
-                self.recorder.stop()
-                self.state = "idle"
+                self._stop_recording("idle")
                 swallow_release = False
 
     def _start_cue(self, press_id):
-        if self.state == "recording" and self.press_id == press_id:
+        """A moment after you start holding the key (so quick shortcuts like Ctrl+C don't
+        trigger it): the start sound, then your Mac's sound is muted while you talk."""
+        def listening():
+            return self.press_id == press_id and self.state in ("recording", "latched")
+        if not listening():
+            return
+        if self.state == "recording":
             play("Tink", self.cfg)
+            if self.cfg["sounds"]:
+                time.sleep(0.12)  # let the start sound play before muting
+        elif self.cfg["sounds"]:
+            time.sleep(0.3)  # hands-free: its "pop" has just started playing
+        if self.cfg.get("mute_while_dictating", True):
+            self.muter.mute(still_wanted=listening)
+
+    def _stop_recording(self, state):
+        audio = self.recorder.stop()
+        self.state = state
+        self.muter.restore()  # after the state change: see SpeakerMuter.mute
+        return audio
 
     def _finish(self):
         time.sleep(self.cfg["tail_seconds"])  # people let go while finishing the last word
-        audio = self.recorder.stop()
-        self.state = "working"
+        audio = self._stop_recording("working")
         self.jobs.put((audio, self.command, self.app))
 
     # ---- AI editor memory: loaded on demand, freed when idle
@@ -1172,7 +1221,7 @@ class Foni(rumps.App):
             text, used_ai = postprocess(raw, self.cfg, self._get_ai, app, self.dictionary)
             tag = "ai" if used_ai else "plain"
             group = style_group(app)
-            style = (self.cfg.get("app_styles") or {}).get(group, "formal") if group else None
+            style = self._style_setting(group) if group else None
             if style and style != "formal":
                 keep = set(self.cfg.get("vocabulary") or [])
                 keep |= {w for e in self.dictionary.entries.values() for w in str(e.get("to", "")).split()}
@@ -1182,29 +1231,27 @@ class Foni(rumps.App):
         print(f"[{dur:.1f}s audio · {app or '?'} · {tag}] asr {t1 - t0:.2f}s, "
               f"edit {t2 - t1:.2f}s → {text!r}")
         if not text:
+            if saved:
+                restore_clipboard(saved)
             return
         self.last_text = text
         if command and selected:
             target, why = True, "replacing selection"
         else:
             target, why = focused_text_target()
-        if target is False:
-            print(f"[paste] no text box ({why}) → showing Copy button")
+        # Always type it: if your cursor is in a text box, that's where it goes. When macOS
+        # can't confirm one (some apps never say), the Copy button appears too, just in case.
+        print(f"[paste] {'text box' if target else 'typing, + Copy button (no text box confirmed)'}: {why}")
+        wait_for_modifiers_released()
+        type_text(text if command else text + " ", saved)
+        if not target:
             self.pending_copy = text
-            if saved:
-                restore_clipboard(saved)
-        else:
-            print(f"[paste] {'text box' if target else 'not sure, pasting + Copy button'}: {why}")
-            wait_for_modifiers_released()
-            type_text(text if command else text + " ", saved)
-            if target is None:  # can't tell if it landed: offer Copy as a fallback
-                self.pending_copy = text
-            if not command:
-                self.watch_token += 1
-                threading.Thread(target=self._watch_edits, args=(text, self.watch_token),
-                                 daemon=True).start()
+        if not command:
+            self.watch_token += 1
+            threading.Thread(target=self._watch_edits, args=(text, self.watch_token),
+                             daemon=True).start()
         rec = {"t": time.time(), "audio_s": round(dur, 2), "app": app, "mode": tag,
-               "pasted": target is not False, "raw": raw, "text": text}
+               "pasted": True, "text_box": target, "raw": raw, "text": text}
         if command:
             rec["selected"] = selected
         with HISTORY_PATH.open("a") as f:

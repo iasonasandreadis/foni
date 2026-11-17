@@ -47,13 +47,15 @@ DEFAULT_CONFIG = {
     "snippets": {},
     "remove_fillers": True,
     "sounds": True,
+    "mute_while_dictating": True,  # silence the Mac while you talk, so the mic hears only you
     "show_pill": True,
     "show_idle_pill": True,  # small resting pill at the bottom of the screen
     "pill_style": "fire",    # fire, bubbles, stardust, hearts, minimal, rainbow, equalizer
     # How dictation is written in each kind of app (menu → Writing style): "formal" (as said,
     # with full stops), "casual" (no full stop at the end), "very_casual" (no capitals either,
     # personal messages only) or "excited" (ends with "!"). Code editors and AI chats never change.
-    "app_styles": {"personal": "casual", "work": "formal", "email": "formal", "other": "formal"},
+    "app_styles": {"personal": "casual", "work": "formal", "email": "formal", "ai": "casual",
+                   "other": "formal"},
     # keep listening this long after you let go, so the last word isn't cut off
     "tail_seconds": 0.25,
     # The Mac AI model is only loaded when a dictation needs it, and freed after this many
@@ -90,6 +92,8 @@ def load_config():
         try:
             on_disk = json.loads(CONFIG_PATH.read_text())
             cfg.update({k: v for k, v in on_disk.items() if k in DEFAULT_CONFIG})
+            # a kind of app added in a newer Foni gets its default style
+            cfg["app_styles"] = {**DEFAULT_CONFIG["app_styles"], **(cfg.get("app_styles") or {})}
         except Exception as e:
             print(f"[config] could not parse {CONFIG_PATH}: {e}")
             return cfg

@@ -1,15 +1,17 @@
 """Updates: check GitHub for a newer Foni, and install it in place.
 
-The check is one small request to GitHub's public API, once a day (menu → Check for updates…
-does it on demand; "check_updates": false in the settings turns it off). Installing downloads
+The check is one small request to GitHub's public API, once a day (menu → Update to the latest
+version does it on demand; "check_updates": false in the settings turns it off). Installing downloads
 the release's Foni.dmg, makes sure it's signed by the same developer as the running Foni (so a
 tampered download is refused, and macOS keeps your permissions), swaps it in and restarts."""
+import glob
 import json
 import os
 import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.request
 
@@ -50,12 +52,28 @@ def same_signer(installed, new):
     return bool(a and a == b and "certificate leaf" in a)
 
 
+_installing = threading.Lock()  # one update at a time, however many times you click
+BUSY = "an update is already being installed"
+
+
 def install(dmg_url, app_path, on_progress=None, trash="~/.Trash"):
     """Download, verify and swap in the new Foni.app. Returns None on success or a reason."""
+    if not _installing.acquire(blocking=False):
+        return BUSY
+    try:
+        return _install(dmg_url, app_path, on_progress, trash)
+    finally:
+        _installing.release()
+
+
+def _install(dmg_url, app_path, on_progress, trash):
+    folder = os.path.dirname(app_path)
+    for old in glob.glob(os.path.join(folder, ".Foni-update*.app")):
+        shutil.rmtree(old, ignore_errors=True)  # half-copied leftovers from an earlier try
     tmp = tempfile.mkdtemp(prefix="foni-update-")
     mount = os.path.join(tmp, "mnt")
     dmg = os.path.join(tmp, "Foni.dmg")
-    staged = os.path.join(os.path.dirname(app_path), ".Foni-update.app")
+    staged = os.path.join(folder, f".Foni-update-{os.getpid()}.app")
     try:
         req = urllib.request.Request(dmg_url, headers={"User-Agent": "Foni-updater"})
         with urllib.request.urlopen(req, timeout=60) as r, open(dmg, "wb") as f:

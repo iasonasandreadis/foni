@@ -86,7 +86,8 @@ def test_style_groups():
     assert style_group("Slack") == "work"
     assert style_group("Mail") == "email"
     assert style_group("Notes") == "other"
-    assert style_group("Claude") is None and style_group("Cursor") is None
+    assert style_group("Claude") == "ai" and style_group("Terminal") == "ai"  # Claude Code too
+    assert style_group("Cursor") is None and style_group("Xcode") is None   # code: never changed
 
 
 def test_styles():

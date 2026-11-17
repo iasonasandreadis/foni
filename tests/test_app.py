@@ -81,7 +81,7 @@ def menu_app(monkeypatch):
     saved = []
     monkeypatch.setattr("foni.app.save_config", lambda cfg: saved.append(json.loads(json.dumps(cfg))))
     app = types.SimpleNamespace(cfg=json.loads(json.dumps(DEFAULT_CONFIG)), saved=saved)
-    for m in ("_build_writing_menu", "_refresh_writing_menu", "set_writing_style"):
+    for m in ("_build_writing_menu", "_refresh_writing_menu", "set_writing_style", "_style_setting"):
         setattr(app, m, getattr(Foni, m).__get__(app))
     return app
 
@@ -90,7 +90,8 @@ def test_writing_style_menu(menu_app):
     app = menu_app
     app._build_writing_menu()
     assert [sub.title for sub, _, _ in app.writing_items.values()] == [
-        "Personal messages: Casual", "Work messages: Formal", "Email: Formal", "Other apps: Formal"]
+        "Personal messages: Casual", "Work messages: Formal", "Email: Formal",
+        "AI apps and terminals: Casual", "Other apps: Formal"]
     sub, _, items = app.writing_items["personal"]
     app.set_writing_style(items["very_casual"])
     assert app.saved[-1]["app_styles"]["personal"] == "very_casual"
@@ -138,3 +139,93 @@ def test_model_path_uses_local_copy_first(monkeypatch):
         raise AssertionError("should not download")
     monkeypatch.setattr(huggingface_hub, "snapshot_download", fake)
     assert models.model_path("org/model") == "/cache/org/model" and calls == [True]
+
+
+# ---- Foni's own keystrokes (Cmd+V to type) must not cancel a dictation you've just started
+def test_own_paste_does_not_cancel_the_next_dictation(keys):
+    from Quartz import CGEventSetIntegerValueField, kCGEventSourceUserData
+    from foni.system import OWN_EVENT
+    app, ev, drain = keys
+    ev("mod", 63, FN)                          # you start the next dictation...
+    assert drain() == ["press"]
+    e = CGEventCreateKeyboardEvent(None, 9, True)   # ...while Foni types the last one (Cmd+V)
+    CGEventSetFlags(e, CMD)
+    CGEventSetIntegerValueField(e, kCGEventSourceUserData, OWN_EVENT)
+    app._on_event(None, kCGEventKeyDown, e, None)
+    assert drain() == [] and app.keys_down == {"fn"}
+    ev("down", 9, CMD)                         # but your own Cmd+V still counts as a shortcut
+    assert drain() == ["chord"]
+
+
+# ---- typing: always type; add the Copy button when macOS can't confirm a text box
+@pytest.mark.parametrize("target, copy", [(True, False), (None, True), (False, True)])
+def test_always_types(target, copy, tmp_path, monkeypatch):
+    import foni.app as appmod
+    import numpy as np
+    typed = []
+    monkeypatch.setattr(appmod, "HISTORY_PATH", tmp_path / "history.jsonl")
+    monkeypatch.setattr(appmod, "focused_text_target", lambda: (target, "AXWebArea"))
+    monkeypatch.setattr(appmod, "type_text", lambda text, saved=None: typed.append(text))
+    monkeypatch.setattr(appmod, "wait_for_modifiers_released", lambda: None)
+    monkeypatch.setattr(appmod, "has_speech", lambda audio: True)
+    app = types.SimpleNamespace(
+        cfg=json.loads(json.dumps(DEFAULT_CONFIG)) | {"ai_editing": "off"}, pending_copy=None,
+        transcriber=types.SimpleNamespace(transcribe=lambda audio: "see you at five"),
+        dictionary=types.SimpleNamespace(hints_for=lambda text: [], entries={}), watch_token=0,
+        stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
+        _watch_edits=lambda text, token: None)
+    app._style_setting = Foni._style_setting.__get__(app)
+    Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "Claude")
+    assert typed == ["See you at five "]
+    assert (app.pending_copy == "See you at five") is copy
+
+
+# ---- updates: one click, and clicking again while it installs does nothing
+def test_update_is_one_click(monkeypatch):
+    started = []
+    monkeypatch.setattr("foni.app.threading.Thread",
+                        lambda target, **kw: types.SimpleNamespace(start=lambda: started.append(target)))
+    app = types.SimpleNamespace(updating=False, update=("9.9.9", "", "url", "page"),
+                                update_checked=0, pending_toast=None,
+                                _install_update=lambda: None, _check_updates=lambda manual: None)
+    for m in ("update_now", "install_update"):
+        setattr(app, m, getattr(Foni, m).__get__(app))
+    for _ in range(5):
+        app.install_update()
+        app.update_now()
+    assert len(started) == 1 and app.updating
+    assert app.pending_toast == "Already updating…"
+
+
+# ---- settings from an older Foni get styles for kinds of app added since
+def test_new_style_groups_get_their_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
+    monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "config.json")
+    (tmp_path / "config.json").write_text(json.dumps({"app_styles": {"personal": "very_casual"}}))
+    styles = config.load_config()["app_styles"]
+    assert styles["personal"] == "very_casual" and styles["ai"] == "casual"
+
+
+# ---- speech: dictations over 2 minutes (they used to need FFmpeg, and were lost without it)
+def test_long_dictation_is_cut_at_pauses():
+    import numpy as np
+    from foni.speech import split_at_pauses
+    rng = np.random.default_rng(0)
+    audio = rng.normal(0, 0.1, 16000 * 200).astype(np.float32)   # 200 s of talking...
+    audio[16000 * 70:16000 * 71] = 0                              # ...a pause at 70 s
+    audio[16000 * 150:16000 * 151] = 0                            # ...and one at 150 s
+    pieces = split_at_pauses(audio)
+    assert sum(len(p) for p in pieces) == len(audio)              # nothing lost or doubled
+    assert [round(len(p) / 16000) for p in pieces] == [70, 80, 50]
+
+
+def test_long_dictation_transcribes_every_piece(monkeypatch):
+    import numpy as np
+    from foni.speech import Transcriber
+    t = Transcriber.__new__(Transcriber)
+    t.engine = "parakeet"
+    heard = []
+    t._parakeet_piece = lambda audio: heard.append(len(audio)) or f"part {len(heard)}."
+    text = t.transcribe(np.zeros(16000 * 200, dtype=np.float32))
+    assert len(heard) > 2 and text == " ".join(f"part {i}." for i in range(1, len(heard) + 1))
+    assert sum(heard) == 16000 * 200 + 2 * int(16000 * 0.15)     # every bit of it, once
