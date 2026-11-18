@@ -47,19 +47,21 @@
   .btn.primary:hover { background: #000; }
   .btn.ghost { border: 1.5px solid var(--ink); }
   .fine { margin-top: 14px; font-size: 14px; color: var(--muted); }
-  .scene { position: relative; background: #ebe4d9; border-radius: 22px; padding: 26px 22px 0; overflow: hidden;
+  .scene { position: relative; background: #ebe4d9; border-radius: 22px; padding: 26px 22px 18px; overflow: hidden;
            border: 1px solid #e1d8c9; }
   .msg { background: #fffdf8; border: 1px solid #e3dacb; border-radius: 14px; padding: 12px 16px 16px;
          box-shadow: 0 1px 0 rgba(27,25,22,0.04); }
   .msg .who { font: 500 12px var(--mono); color: var(--muted); margin-bottom: 6px; }
-  .typed { font-size: 17px; line-height: 1.45; min-height: 2.9em; margin: 0; }
+  .typed { font-size: 17px; line-height: 1.45; margin: 0; display: grid; }
+  .typed > span { grid-area: 1 / 1; }
+  .typed .ghost { visibility: hidden; }  /* holds the full message's height while it types */
   .typed .caret { display: inline-block; width: 2px; height: 1.1em; background: var(--ember); vertical-align: -0.18em;
                   margin-left: 1px; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .fire { display: block; width: 100%; height: auto; margin-top: -6%; aspect-ratio: 840 / 560;
           -webkit-mask-image: radial-gradient(ellipse 62% 58% at 50% 62%, #000 60%, transparent 100%);
                   mask-image: radial-gradient(ellipse 62% 58% at 50% 62%, #000 60%, transparent 100%); }
-  .scene .cap { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font: 500 12px var(--mono); color: var(--muted); }
+  .scene .cap { margin-top: 2px; text-align: center; font: 500 12px var(--mono); color: var(--muted); }
 
   .price { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; }
   .price > div { padding: 26px 24px 26px 0; font-size: 15px; color: var(--muted); }
@@ -93,6 +95,7 @@
   .grid7 figure { margin: 0; }
   .grid7 img { width: 100%; height: auto; display: block; border-radius: 10px; }
   .grid7 figcaption { font: 500 12px var(--mono); color: #a69e91; text-align: center; margin-top: 6px; }
+  .swipe { display: none; font: 500 12px var(--mono); color: #a69e91; margin: 12px 0 0; }
 
   .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line); }
   .feature { padding: 24px 24px 26px 0; border-bottom: 1px solid var(--line); }
@@ -121,11 +124,49 @@
     .feature { padding-right: 0; }
     nav a { margin-left: 14px; }
   }
-  @media (max-width: 480px) {
-    .wrap { padding: 0 16px; }
-    .grid7 { grid-template-columns: repeat(3, 1fr); }
-    table { font-size: 14px; }
-    td:first-child { width: 30%; }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 20px; }
+    header { padding: 18px 0; }
+    .mark { font-size: 24px; }
+    nav a { margin-left: 16px; font-size: 14px; }
+    .hero { padding: 26px 0 44px; gap: 30px; }
+    h1 { font-size: 58px; margin-bottom: 18px; }
+    .lede { font-size: 18px; margin-bottom: 26px; }
+    .cta { gap: 10px; }
+    .cta .btn { flex: 1 1 0; text-align: center; padding: 14px 10px; }
+    .scene { padding: 18px 16px 16px; border-radius: 18px; }
+    .msg { padding: 11px 14px 14px; }
+    .typed { font-size: 16px; }
+    .price > div { padding: 20px 0; }
+    .price b { font-size: 30px; }
+    section { padding-top: 60px; }
+    .sub { margin-bottom: 26px; }
+    .step h3 { font-size: 21px; }
+
+    /* the comparison as one block per row: what, then Foni and Wispr Flow side by side */
+    table, tbody, tr, td { display: block; }
+    thead { display: none; }
+    tr { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+    td { border: 0; padding: 0; font-size: 15px; line-height: 1.45; }
+    td:first-child { grid-column: 1 / -1; width: auto; margin-bottom: 8px; color: var(--ink);
+                     font: 650 18px/1.25 var(--serif); }
+    td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 3px;
+                             font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    td.us[data-label]::before { color: var(--ember); }
+
+    /* the seven looks: swipe through them */
+    .looks { margin-top: 60px; padding: 50px 0 44px; }
+    .grid7 { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+             margin: 0 -20px; padding: 0 20px 4px; scroll-padding: 0 20px; }
+    .grid7::-webkit-scrollbar { display: none; }
+    .grid7 figure { flex: 0 0 40%; scroll-snap-align: start; }
+    .swipe { display: block; }
+
+    .feature { padding: 20px 0 22px; }
+    .numbers { gap: 26px; }
+    .numbers b { margin-bottom: 4px; }
+    .faq h3 { font-size: 19px; }
+    footer { margin-top: 64px; }
   }
 </style>
 </head>
@@ -146,17 +187,17 @@
       </div>
       <p class="fine">Apple Silicon Mac, macOS 14 or later · 175 MB · MIT license</p>
     </div>
-    <div class="scene">
+    <div class="scene" id="demo">
       <div class="msg">
         <div class="who">Message to Nikos</div>
-        <p class="typed" id="typed" aria-label="Running late, I'll be there in ten minutes. Want me to grab coffee?">Running late, I'll be there in ten minutes. Want me to grab coffee?<span class="caret"></span></p>
+        <p class="typed" id="typed" aria-label="Running late, I'll be there in ten minutes. Want me to grab coffee?"><span class="ghost" aria-hidden="true">Running late, I'll be there in ten minutes. Want me to grab coffee?<span class="caret"></span></span><span class="live">Running late, I'll be there in ten minutes. Want me to grab coffee?<span class="caret"></span></span></p>
       </div>
       <video class="fire" src="img/hero-fire.mp4" poster="img/hero-fire.jpg" autoplay muted loop playsinline aria-label="Foni's fire pill, growing with a voice"></video>
       <div class="cap">Hold fn and talk. The fire listens.</div>
     </div>
   </div>
 
-  <div class="price">
+  <div class="price" id="price">
     <div><span class="who">Wispr Flow Pro</span><b>$15 a month</b>Or $12 a month, billed yearly.</div>
     <div class="us"><span class="who">Foni</span><b>Free</b>No word limits. The optional AI clean-up runs on your own Claude key: about 2¢ a month at 7 clean-ups a day.</div>
   </div>
@@ -171,25 +212,25 @@
     </div>
   </section>
 
-  <section>
+  <section id="compare">
     <h2>Foni and Wispr Flow</h2>
     <p class="sub">Wispr Flow is great. Foni does the same job, for free, with your voice staying on your Mac.</p>
     <table>
       <thead><tr><th></th><th>Foni</th><th>Wispr Flow</th></tr></thead>
       <tbody>
-        <tr><td>Price</td><td class="us">Free</td><td>Pro: $15 a month, or $12 a month billed yearly. The free plan has a weekly word limit.</td></tr>
-        <tr><td>Speech to text</td><td class="us">On your Mac</td><td>In Wispr's cloud</td></tr>
-        <tr><td>Without internet</td><td class="us">Dictation works</td><td>No offline mode</td></tr>
-        <tr><td>AI clean-up</td><td class="us">Your own Claude key, an OpenAI-style service, or a model on your Mac</td><td>Included</td></tr>
-        <tr><td>AI commands by voice</td><td class="us">Included</td><td>Command Mode, on the Pro plan</td></tr>
-        <tr><td>Open source</td><td class="us">Yes (MIT)</td><td>No</td></tr>
+        <tr><td>Price</td><td class="us" data-label="Foni">Free</td><td data-label="Wispr Flow">Pro: $15 a month, or $12 a month billed yearly. The free plan has a weekly word limit.</td></tr>
+        <tr><td>Speech to text</td><td class="us" data-label="Foni">On your Mac</td><td data-label="Wispr Flow">In Wispr's cloud</td></tr>
+        <tr><td>Without internet</td><td class="us" data-label="Foni">Dictation works</td><td data-label="Wispr Flow">No offline mode</td></tr>
+        <tr><td>AI clean-up</td><td class="us" data-label="Foni">Your own Claude key, an OpenAI-style service, or a model on your Mac</td><td data-label="Wispr Flow">Included</td></tr>
+        <tr><td>AI commands by voice</td><td class="us" data-label="Foni">Included</td><td data-label="Wispr Flow">Command Mode, on the Pro plan</td></tr>
+        <tr><td>Open source</td><td class="us" data-label="Foni">Yes (MIT)</td><td data-label="Wispr Flow">No</td></tr>
       </tbody>
     </table>
     <p class="note">Wispr Flow details from <a href="https://wisprflow.ai/pricing">its pricing page</a>, <a href="https://docs.wisprflow.ai/articles/3467817258-security-and-compliance-faq">security FAQ</a> and <a href="https://docs.wisprflow.ai/articles/4816967992-how-to-use-command-mode">Command Mode docs</a>, November 2026. Foni isn't affiliated with Wispr.</p>
   </section>
 </div>
 
-<div class="looks">
+<div class="looks" id="looks">
   <div class="wrap">
     <h2>Pick how it looks</h2>
     <p class="sub">Seven styles for the listening pill, each reacting to your voice. These are real captures, not mock-ups.</p>
@@ -202,11 +243,12 @@
       <figure><img src="img/pill-rainbow.png" alt="Rainbow" loading="lazy"><figcaption>Rainbow</figcaption></figure>
       <figure><img src="img/pill-equalizer.png" alt="Retro equalizer" loading="lazy"><figcaption>Equalizer</figcaption></figure>
     </div>
+    <p class="swipe" aria-hidden="true">Swipe for all seven →</p>
   </div>
 </div>
 
 <div class="wrap">
-  <section>
+  <section id="features">
     <h2>Writes like you would</h2>
     <p class="sub">The parts that make you stop re-reading what it typed.</p>
     <div class="features">
@@ -220,7 +262,7 @@
     </div>
   </section>
 
-  <section>
+  <section id="numbers">
     <h2>Measured, not promised</h2>
     <p class="sub">On a MacBook Air M4 with 16 GB, with the AI on Claude Haiku.</p>
     <div class="numbers">
@@ -242,7 +284,7 @@
     </ol>
   </section>
 
-  <section class="faq">
+  <section class="faq" id="questions">
     <h2>Questions</h2>
     <h3>Can I use my Claude Pro or Max subscription?</h3>
     <p>Not in Foni. Anthropic doesn't allow apps made by others to offer Claude subscription sign-in without its approval (<a href="https://code.claude.com/docs/en/agent-sdk/overview">its rule</a>), so Foni uses an API key instead. That's billed separately and pay-as-you-go: for dictation clean-up, cents a month, and Foni's menu shows exactly what you've spent.</p>
@@ -264,7 +306,7 @@
   (function () {
     var el = document.getElementById('typed');
     if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var text = el.getAttribute('aria-label'), node = el.firstChild;
+    var text = el.getAttribute('aria-label'), node = el.querySelector('.live').firstChild;
     function run() {
       var i = 0;
       (function step() {
