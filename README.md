@@ -27,7 +27,7 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 ## Install
 
-1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (175 MB), open it, and drag **Foni** to **Applications**.
+1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (239 MB), open it, and drag **Foni** to **Applications**.
 2. Open Foni. macOS says it can't check the app, because Foni isn't signed with a paid Apple developer account. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Foni.
 3. Foni opens a setup window with a live checklist. Allow the three permissions: **Microphone** lets it hear you, **Input Monitoring** lets it notice the key, and **Accessibility** lets it type for you (on macOS 27 this one is called **Device Control and Data Access**). If a switch is on but the checklist still shows ✗, click **Reset permissions** in that window.
 4. The first time, Foni downloads its speech model (about 2.5 GB). The menu bar shows the progress.
@@ -48,7 +48,7 @@ Only the text of a dictation that needs the AI is sent, never your audio. Keys a
 
 ## Updates
 
-Foni checks GitHub for a newer version a minute after it starts, then every 6 hours. When there is one, the menu shows **Update to Foni x.y.z**: one click downloads it, checks it's signed by the same developer, swaps it in and restarts, and your permissions stay on. **Update to the latest version** in the menu does the same on demand. Turn the check off with `"check_updates": false` in the settings file.
+Foni checks GitHub for a newer version 10 seconds after it starts, then every 6 hours. When there is one, the menu shows **Update to Foni x.y.z**: one click downloads it, checks it's signed by the same developer, swaps it in and restarts (about 15 seconds), and your permissions stay on. While it works, the menu shows how far it is. When you're up to date, the menu says so (**✓ Foni x.y.z is up to date**); click it to check again. Turn the check off with `"check_updates": false` in the settings file.
 
 Coming from 1.0.0–1.0.2 (before the updater existed): download Foni.dmg once more and replace the app. On 1.0.3–1.0.5 the menu item is called **Check for updates…**, then **Install and restart**.
 

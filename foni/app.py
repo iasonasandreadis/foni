@@ -14,6 +14,7 @@ from Quartz import (
     CFRunLoopGetMain,
     CGEventGetFlags,
     CGEventGetIntegerValueField,
+    CGEventGetTimestamp,
     CGEventMaskBit,
     CGEventSourceFlagsState,
     CGEventTapCreate,
@@ -94,6 +95,22 @@ from .text import (
 
 
 UPDATE_EVERY = 6 * 3600  # seconds between update checks (one tiny request to GitHub)
+BOUNCE = 0.35  # a press this soon after hands-free starts is the key bouncing, not you stopping
+SLOW_TAP = 0.45  # a press up to this long can still be one of the two taps that start hands-free
+
+
+def uptime():
+    """The clock macOS stamps key presses with (seconds since the Mac started)."""
+    return time.clock_gettime(time.CLOCK_UPTIME_RAW)
+
+
+def key_time(event):
+    """When the key really moved, by the keyboard's own clock. Foni sometimes gets to a key event
+    a moment late (e.g. while Python tidies up memory); timing it on arrival turned a quick tap
+    into a "hold", which ended hands-free mode the moment it began."""
+    now = uptime()
+    t = CGEventGetTimestamp(event) / 1e9
+    return t if 0 <= now - t < 5 else now
 
 
 # ---------------------------------------------------------------- stats
@@ -187,15 +204,21 @@ class Foni(rumps.App):
         self.copy_bubble.set_accent(STYLE_ACCENTS.get(self.cfg["pill_style"]))
         self.rec_started = 0.0    # when the current recording began
         self.press_id = 0         # identifies a key press, for the delayed start sound
+        self.press_t = self.last_tap = self.latched_at = float("-inf")  # hotkey times (uptime)
+        self.swallow_release = False  # the release of the tap that ended hands-free mode
         self.preview_until = 0.0  # Look → "Preview" in the menu
         self.setup_status = None  # "↓ 42%" in the menu bar while a model downloads
         self.welcome_pending = True   # first tick: open the setup window if anything's missing
         self.setup = None             # the setup window, made when first needed
         self.setup_refreshed = 0.0
         self.update = None            # (version, notes, dmg_url, page_url) when a newer Foni exists
-        self.update_shown = None
+        self.update_shown = None      # the version we've told you about (a toast, once)
         self.updating = False         # an update is downloading/installing (clicks wait for it)
-        self.update_checked = time.time() - UPDATE_EVERY + 60  # first check a minute after launch
+        self.update_step = None       # how far the update is: "downloading 42%", "installing"…
+        self.checking = False         # asking GitHub right now
+        self.up_to_date = False       # GitHub said there's nothing newer
+        self.update_menu_shown = None
+        self.update_checked = time.time() - UPDATE_EVERY + 10  # first check 10 s after launch
         self.restart_pending = False
         self.muter = SpeakerMuter()   # mutes your sound while you dictate
         self.muter.recover()          # ... and unmutes it if Foni was stopped mid-dictation
@@ -240,6 +263,7 @@ class Foni(rumps.App):
         self.perm_item = rumps.MenuItem("⚠︎ Needs permission: finish setting up…",
                                         callback=self.show_setup)
         self.update_item = rumps.MenuItem("Update", callback=self.install_update)
+        self.check_item = rumps.MenuItem("Check for updates", callback=self.update_now)
         self.menu = [
             self.update_item,
             self.perm_item,
@@ -262,7 +286,7 @@ class Foni(rumps.App):
             self.login_item,
             None,
             rumps.MenuItem("Setup & permissions…", callback=self.show_setup),
-            rumps.MenuItem("Update to the latest version", callback=self.update_now),
+            self.check_item,
             rumps.MenuItem("About Foni…", callback=self.about),
             rumps.MenuItem("Restart Foni", callback=self.restart),
             rumps.MenuItem("Quit Foni", callback=self.quit),
@@ -348,17 +372,18 @@ class Foni(rumps.App):
             self.restart()
         if self._update_check_due(time.time()):
             threading.Thread(target=self._check_updates, daemon=True).start()
-        if self.update and self.update_shown != (self.update[0], self.updating):
-            first = self.update_shown is None
-            self.update_shown = (self.update[0], self.updating)
-            version = self.update[0]
-            # one click installs it; while it installs, the item is greyed out so it can't run twice
-            self.update_item.title = (f"Updating to Foni {version}…" if self.updating
-                                      else f"⬆︎ Update to Foni {version}")
-            self.update_item.set_callback(None if self.updating else self.install_update)
-            self.update_item._menuitem.setHidden_(False)
-            if first and not self.updating:
-                self.copy_bubble.toast(f"Foni {version} is available: Update is in the menu", seconds=6)
+        menu = self._update_menu()
+        if menu != self.update_menu_shown:
+            self.update_menu_shown = menu
+            for item, (title, callback) in ((self.update_item, menu[0]), (self.check_item, menu[1])):
+                item._menuitem.setHidden_(title is None)
+                if title is not None:
+                    item.title = title
+                    item.set_callback(callback)  # None greys it out
+        if self.update and not self.updating and self.update_shown != self.update[0]:
+            self.update_shown = self.update[0]
+            self.copy_bubble.toast(f"Foni {self.update[0]} is available: Update is in the menu",
+                                   seconds=6)
         if self.setup is not None and self.setup.visible and time.time() - self.setup_refreshed > 0.5:
             self.setup_refreshed = time.time()
             self.setup.refresh()
@@ -704,35 +729,56 @@ class Foni(rumps.App):
         save_config(self.cfg)
 
     # ---- updates
+    def _update_menu(self):
+        """What the two update items say: ((top title, click), (bottom title, click)). A title of
+        None hides the item; a click of None greys it out. There's only ever one thing to click:
+        the top item when there's an update, else the bottom one to check again."""
+        if self.update:
+            version = self.update[0]
+            if self.updating:
+                step = f" {self.update_step}" if self.update_step else ""
+                return (f"Updating to Foni {version}…{step}", None), (None, None)
+            return (f"⬆︎ Update to Foni {version}", self.install_update), (None, None)
+        if self.updating or self.checking:
+            return (None, None), ("Checking for updates…", None)
+        if self.up_to_date:
+            return (None, None), (f"✓ Foni {__version__} is up to date", self.update_now)
+        return (None, None), ("Check for updates", self.update_now)
+
     def _check_updates(self, manual=False):
+        self.checking = True
         try:
             info = updates.latest_release()
         except Exception as e:
             print(f"[update] couldn't check: {type(e).__name__}")
+            self.checking = False
             if manual:
                 self.updating = False
                 self.pending_toast = "Couldn't check for updates (internet?)"
+            else:  # e.g. no internet yet right after login: try again in 5 minutes
+                self.update_checked = time.time() - UPDATE_EVERY + 300
             return
-        if info and updates.is_newer(info[0], __version__):
+        newer = bool(info and updates.is_newer(info[0], __version__))
+        if newer:
             print(f"[update] Foni {info[0]} is available")
             self.update = info
-            if manual:  # you asked for the latest version: install it right away
-                self._install_update()
-                return
+        self.up_to_date = not newer
+        self.checking = False
+        if manual and newer:  # you asked for the latest version: install it right away
+            self._install_update()
         elif manual:
-            self.pending_toast = f"Foni {__version__} is the latest version ✓"
-        if manual:
             self.updating = False
+            self.pending_toast = f"Foni {__version__} is up to date ✓"
 
     def _update_check_due(self, now):
-        """A minute after Foni starts, then every 6 hours (unless turned off in the settings)."""
+        """10 seconds after Foni starts, then every 6 hours (unless turned off in the settings)."""
         if not self.cfg.get("check_updates", True) or now - self.update_checked < UPDATE_EVERY:
             return False
         self.update_checked = now
         return True
 
     def update_now(self, _=None):
-        """Menu → Update to the latest version: one click checks, installs and restarts."""
+        """Menu → Check for updates: one click checks, and installs and restarts if there's a newer Foni."""
         if self.updating:
             self.pending_toast = "Already updating…"
             return
@@ -755,18 +801,25 @@ class Foni(rumps.App):
             self.updating = False
             return
         self.pending_toast = f"Updating to Foni {version}…"
-        err = updates.install(dmg, app, on_progress=self._progress("update"))
-        self.setup_status = None
+        err = updates.install(dmg, app, on_step=self._update_step)
         if err == updates.BUSY:
             return
         if err:
             print(f"[update] not installed: {err}")
             self.updating = False
+            self.update_step = self.setup_status = None
             self.pending_toast = "The update didn't install; opening the download page"
             subprocess.run(["open", page])
             return
         print(f"[update] installed Foni {version}; restarting")
+        self._update_step("restarting")
         self.restart_pending = True  # restart from the main thread
+
+    def _update_step(self, step):
+        """Shown in the menu ("Updating to Foni 1.0.8… downloading 42%") and the menu bar."""
+        self.update_step = step
+        self.setup_status = ("↓ " + step.split()[-1] if step.startswith("downloading ")
+                             else step.capitalize() + "…")
 
     # ---- setup window
     def hotkey_name(self):
@@ -975,7 +1028,7 @@ class Foni(rumps.App):
         print(f"[hotkey] {pretty(sorted(gone))} was let go without macOS saying so ({reason})")
         if not self.keys_down:
             # what was recorded meanwhile wasn't meant as dictation: throw it away, don't paste it
-            self.events.put(("chord", time.time()))
+            self.events.put(("chord", uptime()))
 
     def _check_stuck_keys(self):
         """Every tick: is the hotkey still physically held? (Fn isn't checked here: macOS
@@ -998,7 +1051,7 @@ class Foni(rumps.App):
             self._missed_release(CGEventGetFlags(event), "next key event", skip=own)
         if etype == kCGEventKeyDown:
             if self.keys_down and not self.learning:
-                self.events.put(("chord", time.time()))  # Option+key = special char, not dictation
+                self.events.put(("chord", key_time(event)))  # Option+key = special char, not dictation
             return event
         name = KEYCODE_TO_NAME.get(CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode))
         if name is None:
@@ -1012,70 +1065,89 @@ class Foni(rumps.App):
         if name not in self.hotkeys:
             # command modifier pressed while the hotkey is held -> voice command
             if down and self.keys_down and HOTKEYS[name][2] == self.command_mod:
-                self.events.put(("command", time.time()))
+                self.events.put(("command", key_time(event)))
             return event
         was = bool(self.keys_down)
         (self.keys_down.add if down else self.keys_down.discard)(name)
         if was != bool(self.keys_down):
-            now = time.time()
-            self.events.put(("press" if self.keys_down else "release", now))
+            t = key_time(event)
+            if uptime() - t > 0.15:
+                print(f"[hotkey] {pretty([name])} reached Foni {uptime() - t:.2f}s late "
+                      "(timed by the keyboard's clock, so a tap still counts as a tap)")
+            self.events.put(("press" if self.keys_down else "release", t, name))
             if self.keys_down and flags & self.command_mod:
-                self.events.put(("command", now))  # modifier was already held
+                self.events.put(("command", t))  # modifier was already held
         return event
 
     # ---- state machine (own thread)
     def _controller(self):
-        press_t = 0.0
-        last_tap = 0.0
-        swallow_release = False
         while True:
-            kind, t = self.events.get()
-            if self.state == "loading":
-                continue
-            if kind == "press":
-                if self.state == "latched":          # tap to finish hands-free mode
-                    swallow_release = True
-                    self._finish()
-                    continue
-                press_t = t
-                swallow_release = False  # a fresh press: any release we were waiting for is past
-                if self.state != "recording":
-                    try:
-                        self.recorder.start()
-                    except Exception as e:
-                        print(f"[mic] {e}")
-                        continue
-                    self.command = False
-                    self.app = frontmost_app()
-                    self.rec_started = time.time()
-                    self.state = "recording"
-                    self.press_id += 1
-                    threading.Timer(0.18, self._start_cue, args=(self.press_id,)).start()
-            elif kind == "command":
-                if self.state == "recording" and not self.command:
-                    self.command = True
-                    if self.cfg.get("ai_engine") != "cloud":
-                        self._ensure_editor()  # voice commands always need the AI
-                    play("Pop", self.cfg)
-            elif kind == "release":
-                if swallow_release:
-                    swallow_release = False
-                    continue
-                if self.state != "recording":
-                    continue
-                if t - press_t < self.cfg["min_hold_seconds"] and not self.command:   # a tap
-                    if t - last_tap < self.cfg["double_tap_window"] + self.cfg["min_hold_seconds"]:
-                        self.state = "latched"                    # double tap -> hands-free
-                        last_tap = 0.0
-                        play("Pop", self.cfg)
-                    else:
-                        last_tap = t
-                        self._stop_recording("idle")
-                else:
-                    self._finish()
-            elif kind == "chord" and self.state == "recording":
+            self._on_hotkey(*self.events.get())
+
+    def _on_hotkey(self, kind, t, key=None):
+        """One hotkey event. `t` is when it happened, by the keyboard's clock (see key_time)."""
+        if self.state == "loading":
+            return
+        if kind == "press":
+            if self.state == "latched":          # tap to finish hands-free mode
+                self.swallow_release = True      # ... and its release isn't a new tap
+                since = t - self.latched_at
+                if since < BOUNCE:
+                    print(f"[hands-free] ignored {pretty([key])} {since:.2f}s after it started "
+                          "(the key bounced)")
+                    return
+                print(f"[hands-free] off after {since:.1f}s: you tapped {pretty([key])}")
+                self._finish()
+                return
+            self.press_t = t
+            self.swallow_release = False  # a fresh press: any release we were waiting for is past
+            if self.state != "recording":
+                try:
+                    self.recorder.start()
+                except Exception as e:
+                    print(f"[mic] {e}")
+                    return
+                self.command = False
+                self.app = frontmost_app()
+                self.rec_started = time.time()
+                self.state = "recording"
+                self.press_id += 1
+                threading.Timer(0.18, self._start_cue, args=(self.press_id,)).start()
+        elif kind == "command":
+            if self.state == "recording" and not self.command:
+                self.command = True
+                if self.cfg.get("ai_engine") != "cloud":
+                    self._ensure_editor()  # voice commands always need the AI
+                play("Pop", self.cfg)
+        elif kind == "release":
+            if self.swallow_release:
+                self.swallow_release = False
+                return
+            if self.state != "recording":
+                return
+            held, quick = t - self.press_t, self.cfg["min_hold_seconds"]
+            window = self.cfg["double_tap_window"] + quick   # from one tap's release to the next's
+            if self.command or held >= SLOW_TAP:
+                self._finish()                                # you held it and talked
+            elif t - self.last_tap < window + max(0.0, held - quick):
+                self.state = "latched"                        # double tap -> hands-free
+                self.latched_at, self.last_tap = t, float("-inf")
+                print(f"[hands-free] on: double tap of {pretty([key])}")
+                play("Pop", self.cfg)
+            elif held < quick:
+                self.last_tap = t                             # a lone quick tap: nothing to type
                 self._stop_recording("idle")
-                swallow_release = False
+            else:
+                # A short "yes", or the first of two slow taps: keep listening a moment. If no
+                # second tap comes, it's typed as said (see "settle").
+                self.last_tap = t
+                threading.Timer(window, self.events.put, args=(("settle", t),)).start()
+        elif kind == "settle":
+            if self.state == "recording" and self.last_tap == t and self.press_t < t:
+                self._finish()                                # no second tap came
+        elif kind == "chord" and self.state == "recording":
+            self._stop_recording("idle")
+            self.swallow_release = False
 
     def _start_cue(self, press_id):
         """A moment after you start holding the key (so quick shortcuts like Ctrl+C don't

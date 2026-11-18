@@ -231,12 +231,40 @@ def test_long_dictation_transcribes_every_piece(monkeypatch):
     assert sum(heard) == 16000 * 200 + 2 * int(16000 * 0.15)     # every bit of it, once
 
 
-def test_update_check_a_minute_after_start_then_every_6_hours():
+def test_update_check_soon_after_start_then_every_6_hours():
     from foni.app import UPDATE_EVERY
     start = 1_000_000.0
-    app = types.SimpleNamespace(cfg={"check_updates": True}, update_checked=start - UPDATE_EVERY + 60)
+    app = types.SimpleNamespace(cfg={"check_updates": True}, update_checked=start - UPDATE_EVERY + 10)
     due = Foni._update_check_due.__get__(app)
-    assert not due(start + 30) and due(start + 61)            # a minute after Foni starts
-    assert not due(start + 61 + 5 * 3600) and due(start + 61 + 6 * 3600 + 1)   # then every 6 hours
+    assert not due(start + 5) and due(start + 11)             # 10 seconds after Foni starts
+    assert not due(start + 11 + 5 * 3600) and due(start + 11 + 6 * 3600 + 1)   # then every 6 hours
     app.cfg["check_updates"] = False
     assert not due(start + 99 * 3600)                        # never, if you turned it off
+
+
+def test_update_menu_says_where_things_stand():
+    from foni import __version__
+    app = types.SimpleNamespace(update=None, updating=False, update_step=None, checking=False,
+                                up_to_date=False, install_update="install", update_now="check")
+    menu = Foni._update_menu.__get__(app)
+    assert menu() == ((None, None), ("Check for updates", "check"))   # not asked GitHub yet
+    app.checking = True
+    assert menu() == ((None, None), ("Checking for updates…", None))  # greyed out
+    app.checking, app.up_to_date = False, True
+    # after updating: no update button left, just where you stand
+    assert menu() == ((None, None), (f"✓ Foni {__version__} is up to date", "check"))
+    app.update, app.up_to_date = ("9.9.9", "", "url", "page"), False
+    assert menu() == (("⬆︎ Update to Foni 9.9.9", "install"), (None, None))  # the one button
+    app.updating, app.update_step = True, "downloading 42%"
+    assert menu() == (("Updating to Foni 9.9.9… downloading 42%", None), (None, None))
+    app.update_step = "installing"
+    assert menu()[0] == ("Updating to Foni 9.9.9… installing", None)
+
+
+def test_update_steps_show_in_the_menu_bar():
+    app = types.SimpleNamespace(update_step=None, setup_status=None)
+    step = Foni._update_step.__get__(app)
+    for said, bar in (("downloading 42%", "↓ 42%"), ("installing", "Installing…"),
+                      ("restarting", "Restarting…")):
+        step(said)
+        assert app.update_step == said and app.setup_status == bar

@@ -89,7 +89,9 @@ mkdir -p "$BUILD/dmg"
 cp -R "$APP" "$BUILD/dmg/"
 ln -s /Applications "$BUILD/dmg/Applications"
 rm -f "$BUILD/Foni-$VERSION.dmg"
-hdiutil create -quiet -volname "Foni" -srcfolder "$BUILD/dmg" -fs HFS+ -format ULMO "$BUILD/Foni-$VERSION.dmg"
+# ULFO (lzfse) unpacks about twice as fast as ULMO (lzma): a bigger download, but updates
+# install in seconds instead of most of a minute (the copy out of the image is the slow part)
+hdiutil create -quiet -volname "Foni" -srcfolder "$BUILD/dmg" -fs HFS+ -format ULFO "$BUILD/Foni-$VERSION.dmg"
 rm -rf "$BUILD/dmg"
 
 echo "✓ $APP ($(du -sh "$APP" | cut -f1)) and $BUILD/Foni-$VERSION.dmg ($(du -sh "$BUILD/Foni-$VERSION.dmg" | cut -f1))"

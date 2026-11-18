@@ -63,7 +63,7 @@ DEFAULT_CONFIG = {
     "ai_unload_after_minutes": 3,
     "min_hold_seconds": 0.25,
     "double_tap_window": 0.45,
-    # Every 6 hours, ask GitHub whether there's a newer Foni (menu → Update to the latest version).
+    # Every 6 hours, ask GitHub whether there's a newer Foni (menu → Check for updates does it now).
     "check_updates": True,
     "welcomed": False,     # the first-launch welcome has been shown
     "login_asked": False,  # Foni has turned on "Open at login" once (you can turn it off)
