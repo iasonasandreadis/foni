@@ -53,9 +53,10 @@ DEFAULT_CONFIG = {
     "pill_style": "fire",    # fire, bubbles, stardust, hearts, minimal, rainbow, equalizer
     # How dictation is written in each kind of app (menu → Writing style): "formal" (as said,
     # with full stops), "casual" (no full stop at the end), "very_casual" (no capitals either,
-    # personal messages only) or "excited" (ends with "!"). Code editors and AI chats never change.
+    # personal messages only) or "excited" (ends with "!"). Code editors never change.
     "app_styles": {"personal": "casual", "work": "formal", "email": "formal", "ai": "casual",
                    "other": "formal"},
+    "styles_paused": False,  # menu → Writing style → Pause styles: everything typed as you said it
     # keep listening this long after you let go, so the last word isn't cut off
     "tail_seconds": 0.25,
     # The Mac AI model is only loaded when a dictation needs it, and freed after this many

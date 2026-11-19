@@ -528,6 +528,10 @@ class Foni(rumps.App):
         One tick per kind of app; each title shows the current choice."""
         self.writing_dirty = False
         self.writing_menu = rumps.MenuItem("Writing style per app")
+        self.pause_styles_item = rumps.MenuItem("Pause styles (type everything as you said it)",
+                                                callback=self.toggle_styles_paused)
+        self.writing_menu.add(self.pause_styles_item)
+        self.writing_menu.add(None)
         self.writing_items = {}
         for group, label, _ in STYLE_GROUPS:
             sub = rumps.MenuItem(f"{label}: …")
@@ -544,11 +548,21 @@ class Foni(rumps.App):
         self._refresh_writing_menu()
 
     def _refresh_writing_menu(self):
+        paused = bool(self.cfg.get("styles_paused"))
+        self.pause_styles_item.state = paused
+        self.writing_menu.title = "Writing style per app" + (": paused" if paused else "")
         for group, (sub, label, items) in self.writing_items.items():
             current = self._style_setting(group)
             for key, item in items.items():
                 item.state = key == current
             sub.title = f"{label}: {WRITING_STYLES.get(current, WRITING_STYLES['formal'])[0]}"
+
+    def toggle_styles_paused(self, _=None):
+        """Pause the per-app styles: every app gets your words as you said them. Your choices
+        per app stay as they are for when you turn the styles back on."""
+        self.cfg["styles_paused"] = not self.cfg.get("styles_paused")
+        save_config(self.cfg)
+        self._refresh_writing_menu()
 
     def _style_setting(self, group):
         styles = self.cfg.get("app_styles") or {}
@@ -962,7 +976,7 @@ class Foni(rumps.App):
                 fresh = json.loads(CONFIG_PATH.read_text())
                 for k in ("vocabulary", "replacements", "snippets", "remove_fillers", "sounds",
                           "ai_editing", "show_pill", "show_idle_pill", "tail_seconds",
-                          "min_hold_seconds", "double_tap_window", "app_styles"):
+                          "min_hold_seconds", "double_tap_window", "app_styles", "styles_paused"):
                     if k in fresh:
                         self.cfg[k] = fresh[k]
                 self.writing_dirty = True
@@ -1301,7 +1315,7 @@ class Foni(rumps.App):
         else:
             text, used_ai = postprocess(raw, self.cfg, self._get_ai, app, self.dictionary)
             tag = "ai" if used_ai else "plain"
-            group = style_group(app)
+            group = None if self.cfg.get("styles_paused") else style_group(app)
             style = self._style_setting(group) if group else None
             if style and style != "formal":
                 keep = set(self.cfg.get("vocabulary") or [])

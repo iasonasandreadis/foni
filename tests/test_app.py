@@ -81,7 +81,8 @@ def menu_app(monkeypatch):
     saved = []
     monkeypatch.setattr("foni.app.save_config", lambda cfg: saved.append(json.loads(json.dumps(cfg))))
     app = types.SimpleNamespace(cfg=json.loads(json.dumps(DEFAULT_CONFIG)), saved=saved)
-    for m in ("_build_writing_menu", "_refresh_writing_menu", "set_writing_style", "_style_setting"):
+    for m in ("_build_writing_menu", "_refresh_writing_menu", "set_writing_style", "_style_setting",
+              "toggle_styles_paused"):
         setattr(app, m, getattr(Foni, m).__get__(app))
     return app
 
@@ -97,6 +98,18 @@ def test_writing_style_menu(menu_app):
     assert app.saved[-1]["app_styles"]["personal"] == "very_casual"
     assert sub.title == "Personal messages: Very casual"
     assert [k for k, i in items.items() if i.state] == ["very_casual"]
+
+
+def test_styles_can_be_paused(menu_app):
+    app = menu_app
+    app._build_writing_menu()
+    assert app.writing_menu.title == "Writing style per app" and not app.pause_styles_item.state
+    app.toggle_styles_paused()
+    assert app.saved[-1]["styles_paused"] is True and app.pause_styles_item.state
+    assert app.writing_menu.title == "Writing style per app: paused"
+    assert app.saved[-1]["app_styles"] == DEFAULT_CONFIG["app_styles"]   # your choices are kept
+    app.toggle_styles_paused()
+    assert app.saved[-1]["styles_paused"] is False and app.writing_menu.title == "Writing style per app"
 
 
 # ---- every pill style draws every state without errors
@@ -178,6 +191,28 @@ def test_always_types(target, copy, tmp_path, monkeypatch):
     Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "Claude")
     assert typed == ["See you at five "]
     assert (app.pending_copy == "See you at five") is copy
+
+
+@pytest.mark.parametrize("paused, typed_text", [(False, "see you at five "), (True, "See you at five. ")])
+def test_paused_styles_type_it_as_you_said_it(paused, typed_text, tmp_path, monkeypatch):
+    import foni.app as appmod
+    import numpy as np
+    typed = []
+    monkeypatch.setattr(appmod, "HISTORY_PATH", tmp_path / "history.jsonl")
+    monkeypatch.setattr(appmod, "focused_text_target", lambda: (True, "AXTextArea"))
+    monkeypatch.setattr(appmod, "type_text", lambda text, saved=None: typed.append(text))
+    monkeypatch.setattr(appmod, "has_speech", lambda audio: True)
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG)) | {"ai_editing": "off", "styles_paused": paused}
+    cfg["app_styles"]["personal"] = "very_casual"
+    app = types.SimpleNamespace(
+        cfg=cfg, pending_copy=None,
+        transcriber=types.SimpleNamespace(transcribe=lambda audio: "See you at five."),
+        dictionary=types.SimpleNamespace(hints_for=lambda text: [], entries={}), watch_token=0,
+        stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
+        _watch_edits=lambda text, token: None)
+    app._style_setting = Foni._style_setting.__get__(app)
+    Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "WhatsApp")
+    assert typed == [typed_text]   # very casual in WhatsApp, unless the styles are paused
 
 
 # ---- updates: one click, and clicking again while it installs does nothing

@@ -18,7 +18,7 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 - **Clean-up that stays faithful.** It removes "um"s and stutters and keeps only your correction ("Tuesday, no wait, Wednesday" → "Wednesday"). It formats spoken lists and keeps your question marks. A safety check throws away any AI edit that rewords you, answers you, or drops a question.
 - **Only when needed.** By default the AI only touches messy dictation, so clean sentences are instant.
-- **Writing style per app.** Casual in WhatsApp and in AI apps like Claude, formal in email, unchanged in code editors. Works in Greek too.
+- **Writing style per app.** Casual in WhatsApp and in AI apps like Claude, formal in email, unchanged in code editors. Works in Greek too. **Pause styles** in the same menu types everything as you said it.
 - **Learns your words.** Fix a misheard word right after dictating (for example "rabbits" → "RAM") and Foni remembers it.
 - **Always types.** When macOS can't confirm there's a text box, Foni types anyway and also shows a Copy button, so nothing you said is lost.
 - **Mutes your Mac while you talk.** A FaceTime call, a video or music playing doesn't get typed too. Your sound comes back the moment you let go.
