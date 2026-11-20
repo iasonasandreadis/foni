@@ -2,6 +2,8 @@
 
 Hold a key, talk, let go: clean text appears wherever you're typing. A free, open-source alternative to Wispr Flow for Apple Silicon Macs.
 
+![Holding Fn while saying a sentence: Foni's fire lights up, then the sentence appears in TextEdit](docs/img/demo.gif)
+
 - **Speech to text runs on your Mac** (NVIDIA Parakeet, on the Apple GPU). Your voice never leaves it.
 - **AI clean-up with your own account.** Plug in your own Claude API key, or any OpenAI-style service. Or keep that on your Mac too, free and offline.
 - **Free.** No subscription and no word limits. With a Claude key, the AI clean-up costs fractions of a cent: about 2 cents a month at 7 clean-ups a day.
