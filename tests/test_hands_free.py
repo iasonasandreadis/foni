@@ -27,6 +27,7 @@ def foni(monkeypatch):
         state="idle", cfg=dict(DEFAULT_CONFIG, tail_seconds=0), command=False, app="", rec_started=0,
         press_id=0, press_t=float("-inf"), last_tap=float("-inf"), latched_at=float("-inf"),
         swallow_release=False, jobs=queue.Queue(), events=queue.Queue(), _start_cue=lambda press_id: None,
+        ahead={"press": None, "done": 0, "texts": []},
         muter=types.SimpleNamespace(restore=lambda: None),
         recorder=types.SimpleNamespace(wedged=False, start=lambda: rec.update(start=clock["now"]),
                                        stop=lambda: (rec.get("start"), clock["now"])))

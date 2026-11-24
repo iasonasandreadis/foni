@@ -45,6 +45,13 @@ class Recorder:
         self.started = time.monotonic()
         self.stream.start()
 
+    def seconds(self):
+        return len(self.chunks) * BLOCK / SAMPLE_RATE
+
+    def audio_so_far(self):
+        chunks = list(self.chunks)
+        return np.concatenate(chunks)[:, 0] if chunks else np.zeros(0, dtype=np.float32)
+
     def stop(self):
         stream, self.stream = self.stream, None
         if stream:

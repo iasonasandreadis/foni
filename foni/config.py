@@ -39,7 +39,9 @@ DEFAULT_CONFIG = {
     "cloud_model": "claude-haiku-5-5",
     "openai_base_url": "https://api.openai.com/v1",
     "openai_model": "",
-    # Names and terms that should always be spelled your way.
+    # Names and terms that should always be spelled your way. Foni also listens out for them:
+    # when something sounds like one but wasn't written like it ("phony" for Foni), it
+    # listens to that part again, favouring your words.
     "vocabulary": [],
     # Say the left side, get the right side.
     "replacements": {"new line": "\n", "new paragraph": "\n\n"},

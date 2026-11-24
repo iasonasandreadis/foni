@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import numpy as np
 from AppKit import NSApplication, NSBundle, NSImage, NSPasteboard, NSPasteboardTypeString
 from CoreFoundation import CFEqual
 from Quartz import (
@@ -66,13 +67,13 @@ from .hotkeys import (
     command_modifier,
     pretty,
 )
-from .learning import Dictionary, _words, find_corrections
+from .learning import Dictionary, _words, find_corrections, looks_like_a_name
 from .models import is_downloaded
 from .pills import PILL_STYLES, STYLE_ACCENTS
 from .setup_window import SetupWindow
 from . import updates
 from .speakers import SpeakerMuter
-from .speech import Transcriber
+from .speech import PIECE, Transcriber, join_pieces, split_at_pauses
 from .system import (
     element_text,
     focused_element,
@@ -206,6 +207,8 @@ class Foni(rumps.App):
         self.copy_bubble.set_accent(STYLE_ACCENTS.get(self.cfg["pill_style"]))
         self.rec_started = 0.0    # when the current recording began
         self.press_id = 0         # identifies a key press, for the delayed start sound
+        self.ahead = {"press": None, "done": 0, "texts": []}  # transcribed while you talk
+        self.last_heard = self.warmed = time.time()           # see _keep_warm
         self.press_t = self.last_tap = self.latched_at = float("-inf")  # hotkey times (uptime)
         self.swallow_release = False  # the release of the tap that ended hands-free mode
         self.preview_until = 0.0  # Look → "Preview" in the menu
@@ -1199,7 +1202,8 @@ class Foni(rumps.App):
     def _finish(self):
         time.sleep(self.cfg["tail_seconds"])  # people let go while finishing the last word
         audio = self._stop_recording("working")
-        self.jobs.put((audio, self.command, self.app))
+        ahead = self.ahead if self.ahead["press"] == self.press_id else None
+        self.jobs.put((audio, self.command, self.app, ahead))
 
     # ---- AI editor memory: loaded on demand, freed when idle
     def _ensure_editor(self):
@@ -1283,9 +1287,16 @@ class Foni(rumps.App):
                              daemon=True).start()
         while True:
             try:
-                job = self.jobs.get(timeout=15)
+                job = self.jobs.get(timeout=1)
             except queue.Empty:
-                self._free_editor_if_idle()
+                try:
+                    if self.state in ("recording", "latched"):
+                        self._transcribe_ahead()
+                    else:
+                        self._free_editor_if_idle()
+                        self._keep_warm()
+                except Exception as e:
+                    print(f"[error] {e}")
                 continue
             if job is None:  # model switch requested from the menu
                 self._free_editor()
@@ -1293,16 +1304,62 @@ class Foni(rumps.App):
                 if self.cfg.get("ai_engine") == "local":  # in the cloud it loads only if needed
                     self._ensure_editor()
                 continue
-            audio, command, app = job
+            audio, command, app, ahead = job
             try:
                 self._reload_config_if_changed()
-                self._handle(audio, command, app)
+                self._handle(audio, command, app, ahead)
             except Exception as e:
                 print(f"[error] {e}")
             if self.state == "working":
                 self.state = "idle"
 
-    def _handle(self, audio, command, app):
+    def _your_words(self):
+        """Names and terms to listen out for: your vocabulary (settings), plus the names
+        Foni has learned from your fixes."""
+        words = list(self.cfg.get("vocabulary") or [])
+        words += [e["to"] for e in self.dictionary.entries.values()
+                  if e.get("count", 0) >= 2 or looks_like_a_name(e.get("to", ""))]
+        return tuple(dict.fromkeys(w for w in words if w and w.strip()))
+
+    def _transcribe_ahead(self):
+        """While you talk (a long hands-free dictation), transcribe what you've said so far,
+        a piece at a time, cut where you paused; when you stop, only the last bit is left."""
+        if self.transcriber.engine != "parakeet":
+            return
+        if self.ahead["press"] != self.press_id:
+            self.ahead = {"press": self.press_id, "done": 0, "texts": []}
+        ahead, rate = self.ahead, SAMPLE_RATE
+        if self.recorder.seconds() - ahead["done"] / rate < PIECE * 1.5:
+            return  # keep at least half a piece for the end
+        rest = self.recorder.audio_so_far()[ahead["done"]:]
+        piece = split_at_pauses(rest, PIECE, PIECE // 2)[0]
+        text = self.transcriber.transcribe(piece, self._your_words())
+        if self.ahead is ahead:
+            ahead["texts"].append(text)
+            ahead["done"] += len(piece)
+            self.last_heard = time.time()
+            print(f"[asr] transcribed {len(piece) / rate:.0f}s while you were talking")
+
+    def _hear(self, audio, ahead=None):
+        """Speech -> text, using what was already transcribed while you talked."""
+        vocab = self._your_words()
+        self.last_heard = time.time()
+        if not ahead or not ahead["done"]:
+            return self.transcriber.transcribe(audio, vocab)
+        rest = audio[ahead["done"]:]
+        tail = self.transcriber.transcribe(rest, vocab) if len(rest) > SAMPLE_RATE * 0.3 else ""
+        return join_pieces(ahead["texts"] + [tail])
+
+    def _keep_warm(self):
+        """The first dictation after Foni sat idle sometimes took 3-8 s instead of under one
+        (macOS had set the speech model's memory aside). A tiny practice run every few minutes
+        keeps it ready."""
+        now = time.time()
+        if now - max(self.last_heard, self.warmed) > 240 and self.transcriber.engine == "parakeet":
+            self.warmed = now
+            self.transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))
+
+    def _handle(self, audio, command, app, ahead=None):
         dur = len(audio) / SAMPLE_RATE
         if dur < 0.3 or not has_speech(audio):
             print("[skip] too short or silent")
@@ -1312,7 +1369,7 @@ class Foni(rumps.App):
             wait_for_modifiers_released()
             selected, saved = grab_selection()
         t0 = time.time()
-        raw = self.transcriber.transcribe(audio)
+        raw = self._hear(audio, ahead)
         t1 = time.time()
         if command:
             editor = self._get_ai()

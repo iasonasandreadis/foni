@@ -188,6 +188,7 @@ def test_always_types(target, copy, tmp_path, monkeypatch):
         stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
         _watch_edits=lambda text, token: None)
     app._style_setting = Foni._style_setting.__get__(app)
+    app._hear = lambda audio, ahead=None: app.transcriber.transcribe(audio)
     Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "Claude")
     assert typed == ["See you at five "]
     assert (app.pending_copy == "See you at five") is copy
@@ -211,6 +212,7 @@ def test_paused_styles_type_it_as_you_said_it(paused, typed_text, tmp_path, monk
         stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
         _watch_edits=lambda text, token: None)
     app._style_setting = Foni._style_setting.__get__(app)
+    app._hear = lambda audio, ahead=None: app.transcriber.transcribe(audio)
     Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "WhatsApp")
     assert typed == [typed_text]   # very casual in WhatsApp, unless the styles are paused
 
@@ -260,7 +262,7 @@ def test_long_dictation_transcribes_every_piece(monkeypatch):
     t = Transcriber.__new__(Transcriber)
     t.engine = "parakeet"
     heard = []
-    t._parakeet_piece = lambda audio: heard.append(len(audio)) or f"part {len(heard)}."
+    t.piece = lambda audio, vocab=(): heard.append(len(audio)) or f"part {len(heard)}."
     text = t.transcribe(np.zeros(16000 * 200, dtype=np.float32))
     assert len(heard) > 2 and text == " ".join(f"part {i}." for i in range(1, len(heard) + 1))
     assert sum(heard) == 16000 * 200 + 2 * int(16000 * 0.15)     # every bit of it, once
