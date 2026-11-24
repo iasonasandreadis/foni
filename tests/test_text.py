@@ -144,3 +144,29 @@ def test_still_learns_joined_and_split_words():
     assert find_corrections(pasted, "Upload it to TestFlight.", pasted) == [("test flight", "TestFlight")]
     pasted = "I paid for the clawed subscription."
     assert find_corrections(pasted, "I paid for the Claude subscription.", pasted) == [("clawed", "Claude")]
+
+
+def test_ignores_rewrites_of_common_words():
+    # these were learned before and then changed in every dictation ("but" typed as "Bet")
+    for before, after in (("But I said so.", "Bet I said so."), ("Ask his team.", "Ask their team."),
+                          ("Do it in the morning.", "Do it while morning."), ("Ask the mod.", "Ask the bot."),
+                          ("I removed it.", "I remove it."), ("I'll go.", "I dont go.")):
+        assert find_corrections(before, after, before) == [], after
+
+
+def test_old_rewrites_are_forgotten_and_one_off_fixes_wait(tmp_path, monkeypatch):
+    import json
+    import foni.learning as learning
+    path = tmp_path / "dictionary.json"
+    monkeypatch.setattr(learning, "LEARNED_PATH", path)
+    path.write_text(json.dumps({"but": {"to": "Bet", "count": 1}, "his": {"to": "their", "count": 3},
+                                "rabbits": {"to": "RAM", "count": 1},
+                                "martown": {"to": "markdown", "count": 1}}))
+    d = learning.Dictionary()
+    assert set(d.entries) == {"rabbits", "martown"}                 # the rewrites are gone
+    assert set(json.loads(path.read_text())) == {"rabbits", "martown"}
+    assert list(tmp_path.glob("dictionary.before-cleanup-*.json"))  # with a copy kept
+    text = "my rabbits use martown"
+    assert [h for h, _, _ in d.hints_for(text)] == ["rabbits"]      # RAM: an acronym, used at once
+    d.add("martown", "markdown")                                     # fixed a second time
+    assert sorted(h for h, _, _ in d.hints_for(text)) == ["martown", "rabbits"]

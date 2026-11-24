@@ -28,7 +28,7 @@ def foni(monkeypatch):
         press_id=0, press_t=float("-inf"), last_tap=float("-inf"), latched_at=float("-inf"),
         swallow_release=False, jobs=queue.Queue(), events=queue.Queue(), _start_cue=lambda press_id: None,
         muter=types.SimpleNamespace(restore=lambda: None),
-        recorder=types.SimpleNamespace(start=lambda: rec.update(start=clock["now"]),
+        recorder=types.SimpleNamespace(wedged=False, start=lambda: rec.update(start=clock["now"]),
                                        stop=lambda: (rec.get("start"), clock["now"])))
     for m in ("_on_hotkey", "_finish", "_stop_recording"):
         setattr(app, m, getattr(Foni, m).__get__(app))

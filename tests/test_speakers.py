@@ -69,7 +69,7 @@ def test_finds_this_macs_speakers():
 def dictation(speaker):
     state, m = speaker
     app = types.SimpleNamespace(press_id=1, state="recording", muter=m, recorder=types.SimpleNamespace(
-        stop=lambda: "audio"), cfg={"sounds": False, "mute_while_dictating": True})
+        stop=lambda: "audio", wedged=False), restart_when_idle=False, cfg={"sounds": False, "mute_while_dictating": True})
     for name in ("_start_cue", "_stop_recording"):
         setattr(app, name, getattr(Foni, name).__get__(app))
     return state, app

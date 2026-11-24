@@ -1,9 +1,11 @@
 """Foni's menu bar app: the hotkey, recording, the pill, and the menu."""
 import json
 import math
+import os
 import queue
 import rumps
 import subprocess
+import sys
 import threading
 import time
 from AppKit import NSApplication, NSBundle, NSImage, NSPasteboard, NSPasteboardTypeString
@@ -220,6 +222,7 @@ class Foni(rumps.App):
         self.update_menu_shown = None
         self.update_checked = time.time() - UPDATE_EVERY + 10  # first check 10 s after launch
         self.restart_pending = False
+        self.restart_when_idle = False  # the microphone froze: restart once the dictation is typed
         self.muter = SpeakerMuter()   # mutes your sound while you dictate
         self.muter.recover()          # ... and unmutes it if Foni was stopped mid-dictation
         self.pending_copy = None  # text to offer in the Copy bubble (set by the worker)
@@ -370,6 +373,9 @@ class Foni(rumps.App):
         if self.restart_pending:
             self.restart_pending = False
             self.restart()
+        if self.restart_when_idle and self.state == "idle" and self.jobs.empty():
+            self.restart_when_idle = False
+            self.restart(hard=True)
         if self._update_check_due(time.time()):
             threading.Thread(target=self._check_updates, daemon=True).start()
         menu = self._update_menu()
@@ -994,7 +1000,7 @@ class Foni(rumps.App):
               f"typing: {'ok' if post else 'MISSING'}")
         return bool(listen and post)
 
-    def restart(self, _=None):
+    def restart(self, _=None, hard=False):
         print("[restart] restarting Foni")
         self.muter.restore()
         app = self._bundle()
@@ -1002,6 +1008,9 @@ class Foni(rumps.App):
             subprocess.Popen(["/bin/sh", "-c", f"sleep 1; open -n '{app}'"], start_new_session=True)
         else:
             print("[restart] running from source; start it again yourself")
+        if hard:  # a frozen audio thread could stop a normal quit from ever finishing
+            sys.stdout.flush()
+            os._exit(0)
         rumps.quit_application()
 
     def quit(self, _=None):
@@ -1180,9 +1189,11 @@ class Foni(rumps.App):
             self.muter.mute(still_wanted=listening)
 
     def _stop_recording(self, state):
-        audio = self.recorder.stop()
+        audio = self.recorder.stop()  # never hangs: see Recorder.MIN_AGE and STOP_WAIT
         self.state = state
         self.muter.restore()  # after the state change: see SpeakerMuter.mute
+        if self.recorder.wedged:
+            self.restart_when_idle = True  # only a fresh Foni gets the microphone back
         return audio
 
     def _finish(self):
