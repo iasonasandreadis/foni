@@ -47,10 +47,27 @@ def designated_requirement(app):
     return m.group(1).strip() if m else None
 
 
+# Foni's Apple Developer team (Developer ID, the paid account that lets Apple notarize Foni).
+# Updates signed by it are trusted too, so copies signed with the old self-signed "Foni Developer"
+# key can move over to it. None until the account exists.
+DEVELOPER_TEAM = None
+
+
+def signed_by_team(app, team):
+    """Apple itself vouches that `app` was signed by `team` (checked by codesign, not by text)."""
+    req = (f'identifier "com.jayandreadis.foni" and anchor apple generic and '
+           f'certificate leaf[subject.OU] = "{team}"')
+    return subprocess.run(["codesign", "--verify", "--strict", f"-R={req}", app],
+                          capture_output=True).returncode == 0
+
+
 def same_signer(installed, new):
-    """Both apps carry the same stable signature (identifier + developer certificate)."""
+    """Both apps carry the same stable signature (identifier + developer certificate), or the
+    new one is signed by Foni's Apple Developer team."""
     a, b = designated_requirement(installed), designated_requirement(new)
-    return bool(a and a == b and "certificate leaf" in a)
+    if a and a == b and "certificate leaf" in a:
+        return True
+    return bool(DEVELOPER_TEAM) and signed_by_team(new, DEVELOPER_TEAM)
 
 
 _installing = threading.Lock()  # one update at a time, however many times you click

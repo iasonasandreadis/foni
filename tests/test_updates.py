@@ -38,6 +38,27 @@ def test_same_signer_needs_a_developer_certificate(monkeypatch):
     assert not updates.same_signer("a", "e")   # someone else's certificate
 
 
+def test_trusts_foni_s_apple_developer_team_once_it_is_set(monkeypatch):
+    reqs = {"old": 'identifier "x" and certificate leaf = H"1"', "new": 'identifier "x" and anchor apple generic'}
+    monkeypatch.setattr(updates, "designated_requirement", lambda app: reqs[app])
+    checked = []
+    monkeypatch.setattr(updates, "signed_by_team", lambda app, team: checked.append((app, team)) or team == "ABCDE12345")
+    assert not updates.same_signer("old", "new")           # no team yet: refused, as before
+    monkeypatch.setattr(updates, "DEVELOPER_TEAM", "ABCDE12345")
+    assert updates.same_signer("old", "new") and checked[-1] == ("new", "ABCDE12345")
+    monkeypatch.setattr(updates, "DEVELOPER_TEAM", "SOMEONE999")
+    assert not updates.same_signer("old", "new")           # another team: refused
+
+
+def test_a_self_signed_app_is_not_taken_for_the_team(tmp_path):
+    # the real codesign check: Foni's current self-signed build can't pass as an Apple-vouched team
+    import glob
+    app = next(iter(glob.glob("/Applications/Foni.app") + glob.glob("build/Foni.app")), None)
+    if not app:
+        pytest.skip("no built Foni to check")
+    assert not updates.signed_by_team(app, "ABCDE12345")
+
+
 HAS_ID = b'"Foni Developer"' in subprocess.run(["security", "find-identity", "-p", "codesigning"],
                                                capture_output=True).stdout
 

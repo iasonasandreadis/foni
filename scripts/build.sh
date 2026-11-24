@@ -73,16 +73,46 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Sign with a stable identity when this Mac has it ("Foni Developer", the release key), so
-# macOS keeps the permissions you gave Foni across updates. Anyone else's build is ad-hoc signed
-# (then macOS asks for the permissions again after each rebuild).
-SIGN="-"
-if security find-identity -p codesigning 2>/dev/null | grep -q '"Foni Developer"'; then SIGN="Foni Developer"; fi
+# Signing, best first:
+#  1. "Developer ID Application: …" (a paid Apple Developer account): hardened runtime, then
+#     notarized by Apple below, so downloaders see no "Apple could not verify" warning.
+#  2. "Foni Developer" (the old self-signed release key): macOS keeps permissions across updates,
+#     but downloaders must click Open Anyway in System Settings the first time.
+#  3. Anyone else: ad-hoc (macOS asks for the permissions again after each rebuild).
+SIGN="-"; HARDEN=()
+DEVID=$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)
+if [ -n "$DEVID" ]; then SIGN="$DEVID"; HARDEN=(--options runtime --timestamp)
+elif security find-identity -p codesigning 2>/dev/null | grep -q '"Foni Developer"'; then SIGN="Foni Developer"; fi
 echo "• Signing ($([ "$SIGN" = "-" ] && echo ad-hoc || echo "$SIGN"))"
-find "$RES" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | xargs -0 codesign --force --sign "$SIGN" 2>/dev/null
-find "$RES/python/bin" -type f -perm +111 -print0 | xargs -0 codesign --force --sign "$SIGN" 2>/dev/null || true
-codesign --force --sign "$SIGN" --identifier com.jayandreadis.foni "$APP"
+find "$RES" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | xargs -0 codesign --force ${HARDEN[@]+"${HARDEN[@]}"} --sign "$SIGN" 2>/dev/null
+find "$RES/python/bin" -type f -perm +111 -print0 | xargs -0 codesign --force ${HARDEN[@]+"${HARDEN[@]}"} --sign "$SIGN" 2>/dev/null || true
+if [ -n "$DEVID" ]; then
+    codesign --force ${HARDEN[@]+"${HARDEN[@]}"} --entitlements packaging/entitlements.plist --sign "$SIGN" \
+        --identifier com.jayandreadis.foni "$APP"
+else
+    codesign --force --sign "$SIGN" --identifier com.jayandreadis.foni "$APP"
+fi
 codesign --verify --deep --strict "$APP"
+
+# Notarize (Developer ID only): Apple checks the app and issues a ticket, stapled onto the app
+# and the disk image so it opens without a warning, even offline. Needs, once:
+#   xcrun notarytool store-credentials foni-notary --apple-id <your Apple ID> --team-id <team ID>
+notarize() {
+    xcrun notarytool submit "$1" --keychain-profile foni-notary --wait --timeout 30m \
+        | tee "$BUILD/notarize.log" | grep -E "status:|id:" | tail -2
+    grep -q "status: Accepted" "$BUILD/notarize.log" \
+        || { echo "✗ Apple didn't accept it: xcrun notarytool log <id> --keychain-profile foni-notary"; exit 1; }
+}
+NOTARIZE=""
+if [ -n "$DEVID" ] && xcrun notarytool history --keychain-profile foni-notary >/dev/null 2>&1; then
+    NOTARIZE=1
+    echo "• Notarizing the app (a few minutes)"
+    rm -f "$BUILD/Foni-app.zip"; ditto -c -k --keepParent "$APP" "$BUILD/Foni-app.zip"
+    notarize "$BUILD/Foni-app.zip"; rm -f "$BUILD/Foni-app.zip"
+    xcrun stapler staple -q "$APP"
+elif [ -n "$DEVID" ]; then
+    echo "! Not notarized: run the store-credentials line above once"
+fi
 
 echo "• Disk image"
 mkdir -p "$BUILD/dmg"
@@ -93,5 +123,11 @@ rm -f "$BUILD/Foni-$VERSION.dmg"
 # install in seconds instead of most of a minute (the copy out of the image is the slow part)
 hdiutil create -quiet -volname "Foni" -srcfolder "$BUILD/dmg" -fs HFS+ -format ULFO "$BUILD/Foni-$VERSION.dmg"
 rm -rf "$BUILD/dmg"
+if [ -n "$NOTARIZE" ]; then
+    codesign --force --timestamp --sign "$SIGN" "$BUILD/Foni-$VERSION.dmg"
+    echo "• Notarizing the disk image"
+    notarize "$BUILD/Foni-$VERSION.dmg"
+    xcrun stapler staple -q "$BUILD/Foni-$VERSION.dmg"
+fi
 
 echo "✓ $APP ($(du -sh "$APP" | cut -f1)) and $BUILD/Foni-$VERSION.dmg ($(du -sh "$BUILD/Foni-$VERSION.dmg" | cut -f1))"
