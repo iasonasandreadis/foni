@@ -159,9 +159,10 @@ class CloudEditor:
             u = r.usage
             print(f"[spend] {u.input_tokens} in / {u.output_tokens} out tokens = {fmt_usd(usd)}")
 
-    def _ask(self, kind, user, max_tokens):
+    def _ask(self, kind, user, max_tokens, timeout=None):
         msgs = AIEditor._messages(kind, user)  # same instructions and examples as the local model
-        r = self.client.messages.create(
+        client = self.client.with_options(timeout=timeout) if timeout else self.client
+        r = client.messages.create(
             model=self.model, max_tokens=max_tokens,
             system=msgs[0]["content"], messages=msgs[1:],
             thinking={"type": "disabled"},  # a cleanup needs speed, not deliberation
@@ -171,11 +172,11 @@ class CloudEditor:
             raise RuntimeError("Claude declined this one")
         return "".join(b.text for b in r.content if b.type == "text").strip()
 
-    def _run(self, kind, user, max_tokens, local_call):
+    def _run(self, kind, user, max_tokens, local_call, timeout=None):
         if not self.broken:
             t = time.time()
             try:
-                out = self._ask(kind, user, max_tokens)
+                out = self._ask(kind, user, max_tokens, timeout)
                 print(f"[cloud] {self.model} edited in {time.time() - t:.2f}s")
                 return out
             except (self.anthropic.AuthenticationError, self.anthropic.PermissionDeniedError) as e:
@@ -197,6 +198,11 @@ class CloudEditor:
         out = self._run("command", AIEditor._command_input(instruction, selected or ""), 1500,
                         lambda ed: ed.command(instruction, selected))
         return out or ""
+
+    def notes(self, transcript):
+        """Key points from a whole conversation (menu → Start conversation notes)."""
+        return self._run("notes", AIEditor._notes_input(transcript), 1500,
+                         lambda ed: ed.notes(transcript), timeout=120)
 
     def ping(self):
         """A tiny test request. None if the key works, otherwise a short reason."""
@@ -248,7 +254,7 @@ class OpenAIEditor:
         if self.key:
             headers["Authorization"] = f"Bearer {self.key}"
         req = urllib.request.Request(self.url, data=json.dumps(body).encode(), headers=headers)
-        with urllib.request.urlopen(req, timeout=8) as r:
+        with urllib.request.urlopen(req, timeout=getattr(self, "timeout", 8)) as r:
             return json.loads(r.read())
 
     def _complete(self, messages, max_tokens):
@@ -300,6 +306,15 @@ class OpenAIEditor:
         out = self._run("command", AIEditor._command_input(instruction, selected or ""), 1500,
                         lambda ed: ed.command(instruction, selected))
         return out or ""
+
+    def notes(self, transcript):
+        """Key points from a whole conversation: it takes longer than a sentence."""
+        self.timeout = 120
+        try:
+            return self._run("notes", AIEditor._notes_input(transcript), 1500,
+                             lambda ed: ed.notes(transcript))
+        finally:
+            self.timeout = 8
 
     def ping(self):
         """A tiny test request. None if it works, otherwise a short reason."""

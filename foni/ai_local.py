@@ -8,6 +8,8 @@ from .prompts import (
     COMMAND_SYSTEM,
     HINTS_SHOTS,
     HINTS_SYSTEM,
+    NOTES_SHOTS,
+    NOTES_SYSTEM,
 )
 
 
@@ -47,6 +49,11 @@ class AIEditor:
                 msgs += [{"role": "user", "content": AIEditor._clean_input(
                     style, [], raw, corr[0] if corr else ())},
                          {"role": "assistant", "content": out}]
+        elif kind == "notes":
+            msgs = [{"role": "system", "content": NOTES_SYSTEM}]
+            for said, out in NOTES_SHOTS:
+                msgs += [{"role": "user", "content": AIEditor._notes_input(said)},
+                         {"role": "assistant", "content": out}]
         else:
             msgs = [{"role": "system", "content": COMMAND_SYSTEM}]
             for instr, sel, out in COMMAND_SHOTS:
@@ -60,6 +67,10 @@ class AIEditor:
         c = ("\nCorrections: " + "; ".join(f"{h} → {m}" for h, m in corrections)
              if corrections else "")
         return f"Context: {style}{v}{c}\n<transcript>\n{text}\n</transcript>"
+
+    @staticmethod
+    def _notes_input(transcript):
+        return f"<transcript>\n{transcript}\n</transcript>"
 
     @staticmethod
     def _command_input(instruction, selected):
@@ -157,3 +168,6 @@ class AIEditor:
 
     def command(self, instruction, selected):
         return self._generate("command", self._command_input(instruction, selected or ""), 700)
+
+    def notes(self, transcript):
+        return self._generate("notes", self._notes_input(transcript), 700)

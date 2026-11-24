@@ -3,6 +3,7 @@ import json
 import math
 import os
 import queue
+import re
 import rumps
 import subprocess
 import sys
@@ -69,6 +70,7 @@ from .hotkeys import (
 )
 from .learning import Dictionary, _words, find_corrections, looks_like_a_name
 from .models import is_downloaded
+from .notes import NOTES_DIR, save_notes
 from .pills import PILL_STYLES, STYLE_ACCENTS
 from .setup_window import SetupWindow
 from . import updates
@@ -98,6 +100,7 @@ from .text import (
 
 
 UPDATE_EVERY = 6 * 3600  # seconds between update checks (one tiny request to GitHub)
+NOTES_LONGEST = 3 * 3600  # conversation notes stop by themselves after this long
 BOUNCE = 0.35  # a press this soon after hands-free starts is the key bouncing, not you stopping
 SLOW_TAP = 0.45  # a press up to this long can still be one of the two taps that start hands-free
 
@@ -270,12 +273,18 @@ class Foni(rumps.App):
                                         callback=self.show_setup)
         self.update_item = rumps.MenuItem("Update", callback=self.install_update)
         self.check_item = rumps.MenuItem("Check for updates", callback=self.update_now)
+        self.notes = None             # a conversation being listened to: {"started": time}
+        self.notes_item = rumps.MenuItem("Start conversation notes", callback=self.toggle_notes)
+        self.notes_shown = None
         self.menu = [
             self.update_item,
             self.perm_item,
             self.hint_item,
             self.command_hint_item,
             self.stats_item,
+            None,
+            self.notes_item,
+            rumps.MenuItem("Open conversation notes…", callback=self.open_notes),
             None,
             self.mode_menu,
             self.engine_menu,
@@ -432,6 +441,16 @@ class Foni(rumps.App):
         if self.stats_dirty:
             self.stats_dirty = False
             self.stats_item.title = self.stats.label()
+        notes = self.notes
+        label = ("Start conversation notes" if notes is None else
+                 "■ Stop and write notes  " + time.strftime("%M:%S", time.gmtime(time.time() - notes["started"])))
+        if label != self.notes_shown:
+            self.notes_shown = label
+            self.notes_item.title = label
+        if notes is not None and time.time() - notes["started"] > NOTES_LONGEST and not notes.get("stopping"):
+            notes["stopping"] = True
+            self.events.put(("notes_stop", uptime()))
+            self.copy_bubble.toast("Conversation notes stop after 3 hours: writing them now")
         title = ("Press a key…" if self.learning else self.setup_status
                  or ("…" if self.state == "loading" else None))
         if self.title_shown != title:
@@ -973,6 +992,14 @@ class Foni(rumps.App):
         except Exception as e:
             print(f"[dictionary] watcher stopped: {e}")
 
+    def toggle_notes(self, _=None):
+        """Menu → Start conversation notes / Stop and write notes."""
+        self.events.put(("notes_stop" if self.notes else "notes_start", uptime()))
+
+    def open_notes(self, _=None):
+        NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["open", str(NOTES_DIR)])
+
     def open_config(self, _):
         subprocess.run(["open", "-t", str(CONFIG_PATH)])
 
@@ -1114,6 +1141,26 @@ class Foni(rumps.App):
         """One hotkey event. `t` is when it happened, by the keyboard's clock (see key_time)."""
         if self.state == "loading":
             return
+        if kind == "notes_start":
+            if self.state not in ("idle", "working"):
+                self.pending_toast = "Finish this dictation first, then start conversation notes"
+                return
+            try:
+                self.recorder.start()
+            except Exception as e:
+                print(f"[mic] {e}")
+                return
+            self.command, self.app, self.rec_started = False, frontmost_app(), time.time()
+            self.press_id += 1
+            self.state, self.latched_at, self.last_tap = "latched", t, float("-inf")
+            self.notes = {"started": time.time()}  # no muting: you may be on a call
+            print("[notes] listening to the conversation")
+            play("Pop", self.cfg)
+            return
+        if kind == "notes_stop":
+            if self.notes is not None and self.state == "latched":
+                self._finish()
+            return
         if kind == "press":
             if self.state == "latched":          # tap to finish hands-free mode
                 self.swallow_release = True      # ... and its release isn't a new tap
@@ -1203,7 +1250,8 @@ class Foni(rumps.App):
         time.sleep(self.cfg["tail_seconds"])  # people let go while finishing the last word
         audio = self._stop_recording("working")
         ahead = self.ahead if self.ahead["press"] == self.press_id else None
-        self.jobs.put((audio, self.command, self.app, ahead))
+        notes, self.notes = self.notes, None
+        self.jobs.put((audio, self.command, self.app, ahead, notes))
 
     # ---- AI editor memory: loaded on demand, freed when idle
     def _ensure_editor(self):
@@ -1304,10 +1352,13 @@ class Foni(rumps.App):
                 if self.cfg.get("ai_engine") == "local":  # in the cloud it loads only if needed
                     self._ensure_editor()
                 continue
-            audio, command, app, ahead = job
+            audio, command, app, ahead, notes = job
             try:
                 self._reload_config_if_changed()
-                self._handle(audio, command, app, ahead)
+                if notes is not None:
+                    self._write_notes(audio, ahead, notes)
+                else:
+                    self._handle(audio, command, app, ahead)
             except Exception as e:
                 print(f"[error] {e}")
             if self.state == "working":
@@ -1358,6 +1409,27 @@ class Foni(rumps.App):
         if now - max(self.last_heard, self.warmed) > 240 and self.transcriber.engine == "parakeet":
             self.warmed = now
             self.transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))
+
+    def _write_notes(self, audio, ahead, notes):
+        """The conversation has ended: key points (by the AI) and the whole transcript, saved as
+        a note, which then opens."""
+        minutes = len(audio) / SAMPLE_RATE / 60
+        if len(audio) < SAMPLE_RATE * 2 or not has_speech(audio):
+            print("[notes] nothing was said")
+            self.pending_toast = "Conversation notes: nothing was heard"
+            return
+        transcript = re.sub(r"\s+", " ", self._hear(audio, ahead).replace("<unk>", "")).strip()
+        if not transcript:
+            self.pending_toast = "Conversation notes: nothing was heard"
+            return
+        t = time.time()
+        ai = self._get_ai()
+        written = ai.notes(transcript) if ai else None
+        path = save_notes(written, transcript, notes["started"], minutes)
+        print(f"[notes] {minutes:.1f} min conversation, {len(transcript.split())} words → "
+              f"{path.name} ({'notes in %.1fs' % (time.time() - t) if written else 'transcript only: no AI'})")
+        self.pending_toast = "Conversation notes saved" if written else "Transcript saved (no AI for notes)"
+        subprocess.run(["open", "-t", str(path)])
 
     def _handle(self, audio, command, app, ahead=None):
         dur = len(audio) / SAMPLE_RATE
