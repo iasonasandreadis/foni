@@ -59,10 +59,11 @@ def foni(monkeypatch, tmp_path):
         press_id=0, press_t=float("-inf"), last_tap=float("-inf"), latched_at=float("-inf"),
         swallow_release=False, jobs=queue.Queue(), events=queue.Queue(), notes=None, pending_toast=None,
         ahead={"press": None, "done": 0, "texts": []}, restart_when_idle=False,
+        context={"press": None}, _read_context=lambda press_id: None,
         muter=types.SimpleNamespace(restore=lambda: None, mute=lambda **k: muted.append(1)),
         recorder=types.SimpleNamespace(wedged=False, start=lambda: None,
                                        stop=lambda: talking(90)),
-        _hear=lambda audio, ahead=None: "so the launch is on friday and you will post the video",
+        _hear=lambda audio, ahead=None, names=(): "so the launch is on friday and you will post the video",
         _get_ai=lambda: types.SimpleNamespace(notes=lambda t: "# Launch on Friday\n## Key points\n- Launch is Friday."))
     for m in ("_on_hotkey", "_finish", "_stop_recording", "_write_notes", "toggle_notes"):
         setattr(app, m, getattr(Foni, m).__get__(app))
@@ -74,7 +75,7 @@ def test_start_listen_stop_and_save(foni):
     app._on_hotkey("notes_start", 1.0)
     assert app.state == "latched" and app.notes and not muted   # listening, sound left on
     app._on_hotkey("notes_stop", 5.0)
-    audio, command, where, ahead, notes = app.jobs.get_nowait()
+    audio, command, where, ahead, notes, ctx = app.jobs.get_nowait()
     assert notes is not None and app.notes is None and app.state == "working"
     app._write_notes(audio, ahead, notes)
     saved = list(folder.glob("*.md"))
@@ -107,9 +108,9 @@ def test_the_menu_starts_and_stops_it(foni):
 
 def test_unknown_word_markers_are_left_out_of_the_transcript(foni):
     app, _, _, folder = foni
-    app._hear = lambda audio, ahead=None: "we film<unk> on  thursday"
+    app._hear = lambda audio, ahead=None, names=(): "we film<unk> on  thursday"
     app._on_hotkey("notes_start", 1.0)
     app._on_hotkey("notes_stop", 5.0)
-    audio, _, _, ahead, notes = app.jobs.get_nowait()
+    audio, _, _, ahead, notes, _ = app.jobs.get_nowait()
     app._write_notes(audio, ahead, notes)
     assert "we film on thursday" in next(folder.glob("*.md")).read_text()

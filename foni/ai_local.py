@@ -10,6 +10,8 @@ from .prompts import (
     HINTS_SYSTEM,
     NOTES_SHOTS,
     NOTES_SYSTEM,
+    SCREEN_RULE,
+    SCREEN_SHOTS,
 )
 
 
@@ -41,13 +43,18 @@ class AIEditor:
 
     @staticmethod
     def _messages(kind, user):
-        if kind in ("clean", "clean_hints"):
-            system, shots = ((CLEAN_SYSTEM, CLEAN_SHOTS) if kind == "clean"
-                             else (HINTS_SYSTEM, HINTS_SHOTS))
+        if kind.startswith("clean"):  # clean, clean_hints, and either + "_screen"
+            system, shots = ((HINTS_SYSTEM, HINTS_SHOTS) if "hints" in kind
+                             else (CLEAN_SYSTEM, CLEAN_SHOTS))
+            if kind.endswith("_screen"):
+                system = system.replace("\n- Output only the cleaned text.",
+                                        SCREEN_RULE + "\n- Output only the cleaned text.")
+                shots = shots + SCREEN_SHOTS
             msgs = [{"role": "system", "content": system}]
-            for style, raw, out, *corr in shots:
+            for style, raw, out, *extra in shots:
+                corr, screen = (list(extra) + [(), None])[:2]
                 msgs += [{"role": "user", "content": AIEditor._clean_input(
-                    style, [], raw, corr[0] if corr else ())},
+                    style, [], raw, corr, screen)},
                          {"role": "assistant", "content": out}]
         elif kind == "notes":
             msgs = [{"role": "system", "content": NOTES_SYSTEM}]
@@ -62,11 +69,16 @@ class AIEditor:
         return msgs + [{"role": "user", "content": user}]
 
     @staticmethod
-    def _clean_input(style, vocab, text, corrections=()):
+    def _clean_input(style, vocab, text, corrections=(), screen=None):
         v = f"\nVocabulary: {', '.join(vocab)}" if vocab else ""
         c = ("\nCorrections: " + "; ".join(f"{h} → {m}" for h, m in corrections)
              if corrections else "")
-        return f"Context: {style}{v}{c}\n<transcript>\n{text}\n</transcript>"
+        s = f"\n<screen>\n{screen}\n</screen>" if screen else ""
+        return f"Context: {style}{v}{c}{s}\n<transcript>\n{text}\n</transcript>"
+
+    @staticmethod
+    def clean_kind(corrections, screen):
+        return ("clean_hints" if corrections else "clean") + ("_screen" if screen else "")
 
     @staticmethod
     def _notes_input(transcript):
@@ -160,7 +172,8 @@ class AIEditor:
             break
         return self.tok.decode(out)
 
-    def clean(self, text, style, vocab, corrections=()):
+    def clean(self, text, style, vocab, corrections=(), screen=None):
+        # `screen` is ignored here: the small Mac model copies from it more than it learns
         n = len(text.split())
         kind = "clean_hints" if corrections else "clean"
         return self._generate(kind, self._clean_input(style, vocab, text, corrections),

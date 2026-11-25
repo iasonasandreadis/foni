@@ -70,6 +70,7 @@ from .hotkeys import (
 )
 from .learning import Dictionary, _words, find_corrections, looks_like_a_name
 from .models import is_downloaded
+from . import context as screen_context
 from .notes import NOTES_DIR, save_notes
 from .pills import PILL_STYLES, STYLE_ACCENTS
 from .setup_window import SetupWindow
@@ -159,7 +160,8 @@ class Foni(rumps.App):
               ("rainbow", "Rainbow", "rainbow"),
               ("equalizer", "Retro equalizer", "chart.bar.fill"))
     # (setting value, menu label, short name shown in the menu's title)
-    AI_MODES = (("smart", "Only messy dictation (recommended)", "Only messy dictation"),
+    AI_MODES = (("smart", "Smart: every dictation with a cloud AI, only messy ones on this Mac "
+                          "(recommended)", "Smart"),
                 ("always", "Every dictation", "Every dictation"),
                 ("off", "Never", "Off"))
     AI_ENGINES = (("local", "This Mac (private, offline, free)", "This Mac"),
@@ -211,6 +213,7 @@ class Foni(rumps.App):
         self.rec_started = 0.0    # when the current recording began
         self.press_id = 0         # identifies a key press, for the delayed start sound
         self.ahead = {"press": None, "done": 0, "texts": []}  # transcribed while you talk
+        self.context = {"press": None}  # the conversation around your cursor, read as you start
         self.last_heard = self.warmed = time.time()           # see _keep_warm
         self.press_t = self.last_tap = self.latched_at = float("-inf")  # hotkey times (uptime)
         self.swallow_release = False  # the release of the tap that ended hands-free mode
@@ -490,6 +493,10 @@ class Foni(rumps.App):
                 menu.add(item)
             return menu, items
         self.mode_menu, self.mode_items = choice_menu(self.AI_MODES, self.set_ai_mode)
+        self.mode_menu.add(None)
+        self.context_item = rumps.MenuItem("Read the conversation around your cursor",
+                                           callback=self.toggle_context)
+        self.mode_menu.add(self.context_item)
         self.engine_menu, self.engine_items = choice_menu(self.AI_ENGINES, self.set_engine)
         self.engine_menu.add(None)
         self.engine_menu.add(rumps.MenuItem("Set Claude API key…", callback=self.set_api_key))
@@ -511,6 +518,7 @@ class Foni(rumps.App):
         short = lambda options, value: next((s for k, _, s in options if k == value), value)
         for key, item in self.mode_items.items():
             item.state = key == self.cfg["ai_editing"]
+        self.context_item.state = bool(self.cfg.get("read_context", True))
         for key, item in self.engine_items.items():
             item.state = key == self.cfg["ai_engine"]
         for key, item in self.model_items.items():
@@ -603,6 +611,12 @@ class Foni(rumps.App):
         save_config(self.cfg)
         self._refresh_writing_menu()
 
+    def toggle_context(self, _=None):
+        """Read the conversation around your cursor (on) or not (off). See context.py."""
+        self.cfg["read_context"] = not self.cfg.get("read_context", True)
+        save_config(self.cfg)
+        self._refresh_ai_menus()
+
     def set_ai_mode(self, item):
         self.cfg["ai_editing"] = item.lf_key
         save_config(self.cfg)
@@ -658,8 +672,8 @@ class Foni(rumps.App):
         r = rumps.Window(
             title="Claude API key",
             message=("Paste your Claude API key. Foni keeps it in your Mac's Keychain. "
-                     "Only the text of dictations that need AI editing is sent to Claude, "
-                     "never your audio."),
+                     "The text of your dictations (and, unless you turn it off, the text "
+                     "around your cursor) is sent to Claude, never your audio."),
             default_text="", ok="Save", cancel="Cancel", dimensions=(360, 24), secure=True).run()
         key = (r.text or "").strip()
         if not r.clicked or not key:
@@ -706,8 +720,9 @@ class Foni(rumps.App):
             return
         r = rumps.Window(title="OpenAI-style service (3 of 3): API key",
                          message=("Paste your API key. Foni keeps it in your Mac's Keychain. "
-                                  "Leave it empty for Ollama or LM Studio on this Mac. Only the "
-                                  "text of dictations that need the AI is sent, never your audio."),
+                                  "Leave it empty for Ollama or LM Studio on this Mac. Only text "
+                                  "is sent (your dictations and the text around your cursor), "
+                                  "never your audio."),
                          default_text="", ok="Save", cancel="Cancel", dimensions=(360, 24),
                          secure=True).run()
         if not r.clicked:
@@ -1012,7 +1027,8 @@ class Foni(rumps.App):
                 fresh = json.loads(CONFIG_PATH.read_text())
                 for k in ("vocabulary", "replacements", "snippets", "remove_fillers", "sounds",
                           "ai_editing", "show_pill", "show_idle_pill", "tail_seconds",
-                          "min_hold_seconds", "double_tap_window", "app_styles", "styles_paused"):
+                          "min_hold_seconds", "double_tap_window", "app_styles", "styles_paused",
+                          "read_context"):
                     if k in fresh:
                         self.cfg[k] = fresh[k]
                 self.writing_dirty = True
@@ -1185,6 +1201,7 @@ class Foni(rumps.App):
                 self.rec_started = time.time()
                 self.state = "recording"
                 self.press_id += 1
+                self._read_context(self.press_id)
                 threading.Timer(0.18, self._start_cue, args=(self.press_id,)).start()
         elif kind == "command":
             if self.state == "recording" and not self.command:
@@ -1250,8 +1267,35 @@ class Foni(rumps.App):
         time.sleep(self.cfg["tail_seconds"])  # people let go while finishing the last word
         audio = self._stop_recording("working")
         ahead = self.ahead if self.ahead["press"] == self.press_id else None
+        ctx = self.context if self.context.get("press") == self.press_id else None
         notes, self.notes = self.notes, None
-        self.jobs.put((audio, self.command, self.app, ahead, notes))
+        self.jobs.put((audio, self.command, self.app, ahead, notes, ctx))
+
+    def _read_context(self, press_id):
+        """As you start talking, read the conversation around your cursor (in the background:
+        it takes about 0.02-0.2 s), for the speech model (names) and a cloud AI (the text)."""
+        if not self.cfg.get("read_context", True):
+            return
+        ctx = {"press": press_id, "ready": threading.Event(), "screen": "", "names": ()}
+        self.context = ctx
+
+        def read():
+            try:
+                got = screen_context.read()
+                if got and got["screen"]:
+                    ctx["screen"] = got["screen"]
+                    ctx["names"] = tuple(screen_context.names_in(got["screen"], self._your_words()))
+                    print(f"[context] read {len(got['screen'])} characters around your cursor in "
+                          f"{got['app']} ({got['seconds']:.2f}s), {len(ctx['names'])} names")
+            finally:
+                ctx["ready"].set()
+        threading.Thread(target=read, daemon=True).start()
+
+    def _context_for(self, ctx, wait=0.4):
+        """The context read for this dictation, once it's ready (never waits long)."""
+        if not ctx or not ctx["ready"].wait(wait):
+            return None
+        return ctx if ctx["screen"] else None
 
     # ---- AI editor memory: loaded on demand, freed when idle
     def _ensure_editor(self):
@@ -1352,24 +1396,25 @@ class Foni(rumps.App):
                 if self.cfg.get("ai_engine") == "local":  # in the cloud it loads only if needed
                     self._ensure_editor()
                 continue
-            audio, command, app, ahead, notes = job
+            audio, command, app, ahead, notes, ctx = job
             try:
                 self._reload_config_if_changed()
                 if notes is not None:
                     self._write_notes(audio, ahead, notes)
                 else:
-                    self._handle(audio, command, app, ahead)
+                    self._handle(audio, command, app, ahead, ctx)
             except Exception as e:
                 print(f"[error] {e}")
             if self.state == "working":
                 self.state = "idle"
 
-    def _your_words(self):
-        """Names and terms to listen out for: your vocabulary (settings), plus the names
-        Foni has learned from your fixes."""
+    def _your_words(self, extra=()):
+        """Names and terms to listen out for: your vocabulary (settings), the names Foni has
+        learned from your fixes, and `extra` (names on screen right now)."""
         words = list(self.cfg.get("vocabulary") or [])
         words += [e["to"] for e in self.dictionary.entries.values()
                   if e.get("count", 0) >= 2 or looks_like_a_name(e.get("to", ""))]
+        words += list(extra)
         return tuple(dict.fromkeys(w for w in words if w and w.strip()))
 
     def _transcribe_ahead(self):
@@ -1384,16 +1429,18 @@ class Foni(rumps.App):
             return  # keep at least half a piece for the end
         rest = self.recorder.audio_so_far()[ahead["done"]:]
         piece = split_at_pauses(rest, PIECE, PIECE // 2)[0]
-        text = self.transcriber.transcribe(piece, self._your_words())
+        ctx = getattr(self, "context", {}) or {}
+        names = ctx.get("names", ()) if ctx.get("press") == self.press_id else ()
+        text = self.transcriber.transcribe(piece, self._your_words(names))
         if self.ahead is ahead:
             ahead["texts"].append(text)
             ahead["done"] += len(piece)
             self.last_heard = time.time()
             print(f"[asr] transcribed {len(piece) / rate:.0f}s while you were talking")
 
-    def _hear(self, audio, ahead=None):
+    def _hear(self, audio, ahead=None, names=()):
         """Speech -> text, using what was already transcribed while you talked."""
-        vocab = self._your_words()
+        vocab = self._your_words(names)
         self.last_heard = time.time()
         if not ahead or not ahead["done"]:
             return self.transcriber.transcribe(audio, vocab)
@@ -1431,7 +1478,7 @@ class Foni(rumps.App):
         self.pending_toast = "Conversation notes saved" if written else "Transcript saved (no AI for notes)"
         subprocess.run(["open", "-t", str(path)])
 
-    def _handle(self, audio, command, app, ahead=None):
+    def _handle(self, audio, command, app, ahead=None, ctx=None):
         dur = len(audio) / SAMPLE_RATE
         if dur < 0.3 or not has_speech(audio):
             print("[skip] too short or silent")
@@ -1440,8 +1487,9 @@ class Foni(rumps.App):
         if command:
             wait_for_modifiers_released()
             selected, saved = grab_selection()
+        ctx = None if command else self._context_for(ctx)
         t0 = time.time()
-        raw = self._hear(audio, ahead)
+        raw = self._hear(audio, ahead, ctx["names"] if ctx else ())
         t1 = time.time()
         if command:
             editor = self._get_ai()
@@ -1453,7 +1501,8 @@ class Foni(rumps.App):
             text = editor.command(raw.replace("<unk>", ""), selected)
             tag = "command on selection" if selected else "command"
         else:
-            text, used_ai = postprocess(raw, self.cfg, self._get_ai, app, self.dictionary)
+            text, used_ai = postprocess(raw, self.cfg, self._get_ai, app, self.dictionary,
+                                        screen=ctx["screen"] if ctx else None)
             tag = "ai" if used_ai else "plain"
             group = None if self.cfg.get("styles_paused") else style_group(app)
             style = self._style_setting(group) if group else None

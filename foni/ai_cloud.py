@@ -143,7 +143,8 @@ class ClaudeSpend:
 
 class CloudEditor:
     """AI editing with Claude Haiku: smarter than the local model, fluent in Greek, and uses no
-    RAM on your Mac. Only the text of a dictation that needs editing is sent, never audio.
+    RAM on your Mac. Only text is sent (the dictation, and with "Read the conversation" on, the
+    text around your cursor), never audio.
     Whenever Claude can't be reached, it quietly uses the local model instead."""
 
     def __init__(self, api_key, model, fallback, meter=None):
@@ -187,9 +188,9 @@ class CloudEditor:
         ed = self.fallback()
         return local_call(ed) if ed else None
 
-    def clean(self, text, style, vocab, corrections=()):
-        kind = "clean_hints" if corrections else "clean"
-        out = self._run(kind, AIEditor._clean_input(style, vocab, text, corrections),
+    def clean(self, text, style, vocab, corrections=(), screen=None):
+        kind = AIEditor.clean_kind(corrections, screen)
+        out = self._run(kind, AIEditor._clean_input(style, vocab, text, corrections, screen),
                         min(1200, 3 * len(text.split()) + 60),
                         lambda ed: ed.clean(text, style, vocab, corrections))
         return out if out is not None else text
@@ -295,9 +296,9 @@ class OpenAIEditor:
         ed = self.fallback()
         return local_call(ed) if ed else None
 
-    def clean(self, text, style, vocab, corrections=()):
-        kind = "clean_hints" if corrections else "clean"
-        out = self._run(kind, AIEditor._clean_input(style, vocab, text, corrections),
+    def clean(self, text, style, vocab, corrections=(), screen=None):
+        kind = AIEditor.clean_kind(corrections, screen)
+        out = self._run(kind, AIEditor._clean_input(style, vocab, text, corrections, screen),
                         min(1200, 3 * len(text.split()) + 60),
                         lambda ed: ed.clean(text, style, vocab, corrections))
         return out if out is not None else text

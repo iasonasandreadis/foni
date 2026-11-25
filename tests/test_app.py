@@ -188,7 +188,8 @@ def test_always_types(target, copy, tmp_path, monkeypatch):
         stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
         _watch_edits=lambda text, token: None)
     app._style_setting = Foni._style_setting.__get__(app)
-    app._hear = lambda audio, ahead=None: app.transcriber.transcribe(audio)
+    app._hear = lambda audio, ahead=None, names=(): app.transcriber.transcribe(audio)
+    app._context_for = Foni._context_for.__get__(app)
     Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "Claude")
     assert typed == ["See you at five "]
     assert (app.pending_copy == "See you at five") is copy
@@ -212,7 +213,8 @@ def test_paused_styles_type_it_as_you_said_it(paused, typed_text, tmp_path, monk
         stats=types.SimpleNamespace(add=lambda rec: None), last_text="", _get_ai=lambda: None,
         _watch_edits=lambda text, token: None)
     app._style_setting = Foni._style_setting.__get__(app)
-    app._hear = lambda audio, ahead=None: app.transcriber.transcribe(audio)
+    app._hear = lambda audio, ahead=None, names=(): app.transcriber.transcribe(audio)
+    app._context_for = Foni._context_for.__get__(app)
     Foni._handle(app, np.zeros(16000, dtype=np.float32), False, "WhatsApp")
     assert typed == [typed_text]   # very casual in WhatsApp, unless the styles are paused
 

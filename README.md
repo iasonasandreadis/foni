@@ -19,7 +19,8 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 | Hold **Fn + Control**, talk | Ask the AI: rewrite the selected text ("make this more formal", "translate this to Greek"), or write something new ("draft a reply saying I can't make it Friday") |
 
 - **Clean-up that stays faithful.** It removes "um"s and stutters and keeps only your correction ("Tuesday, no wait, Wednesday" → "Wednesday"). It formats spoken lists and keeps your question marks. A safety check throws away any AI edit that rewords you, answers you, or drops a question.
-- **Only when needed.** By default the AI only touches messy dictation, so clean sentences are instant.
+- **Reads the conversation.** As you start talking, Foni reads the text around your cursor: names on screen are spelled right, and with a cloud AI, words that don't fit the conversation get fixed ("an AI riding them" → "writing"). Never from password fields; keys are blanked out. Menu → AI clean-up turns it off.
+- **Checks every dictation in the cloud.** With Claude, every dictation gets checked; with the Mac model only messy ones, so clean sentences stay instant.
 - **Writing style per app.** Casual in WhatsApp and in AI apps like Claude, formal in email, unchanged in code editors. Works in Greek too. **Pause styles** in the same menu types everything as you said it.
 - **Learns your words.** Fix a misheard name or term right after dictating (for example "rabbits" → "RAM") and Foni remembers it: acronyms and names after one fix, other words after two. Edits that change your wording ("but" → "so") are never learned.
 - **Hears your names right.** Add names and terms to `"vocabulary"` in the settings file. When something sounds like one of them but wasn't written like it ("phony" for Foni, "test flight" for TestFlight), Foni listens to that part again, favouring your words. On 36 test recordings in six English accents, this cut word errors from 7.4% to 1.6%.
@@ -32,7 +33,7 @@ Website: [jayandreadis.com/foni](https://jayandreadis.com/foni) · Download: [la
 
 ## Install
 
-1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (239 MB), open it, and drag **Foni** to **Applications**.
+1. Download [Foni.dmg](https://github.com/iasonasandreadis/foni/releases/latest/download/Foni.dmg) (235 MB), open it, and drag **Foni** to **Applications**.
 2. Open Foni. macOS says it can't check the app, because Foni isn't signed with a paid Apple developer account. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Foni.
 3. Foni opens a setup window with a live checklist. Allow the three permissions: **Microphone** lets it hear you, **Input Monitoring** lets it notice the key, and **Accessibility** lets it type for you (on macOS 27 this one is called **Device Control and Data Access**). If a switch is on but the checklist still shows ✗, click **Reset permissions** in that window.
 4. The first time, Foni downloads its speech model (about 2.5 GB). The menu bar shows the progress.
@@ -49,7 +50,7 @@ Menu bar → **AI runs on**:
 - **Claude.** Paste your own [Claude API key](https://console.anthropic.com). Foni uses Claude Haiku, which is fast and great at Greek. The menu shows exactly what it has cost you. A Claude.ai Pro or Max subscription can't be used by other apps; you need an API key, which is pay-as-you-go.
 - **OpenAI-style service.** OpenAI, OpenRouter or Groq with your key, or a local Ollama or LM Studio server without one.
 
-Only the text of a dictation that needs the AI is sent, never your audio. Keys are stored in your Mac's Keychain.
+Only text is sent (your dictation, and the text around your cursor unless you turn that off), never your audio. Keys are stored in your Mac's Keychain.
 
 ## Updates
 

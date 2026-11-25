@@ -22,8 +22,9 @@ DEFAULT_CONFIG = {
     "parakeet_model": "mlx-community/parakeet-tdt-0.6b-v3",
     "whisper_model": "mlx-community/whisper-large-v3-turbo",
     "language": None,  # Whisper only: null = auto-detect, or e.g. "en", "el"
-    # AI clean-up: "smart" polishes only messy dictation (self-corrections, lists, repeated
-    # words, fillers, long dictation) so clean sentences stay instant; "always"; or "off".
+    # AI clean-up: "smart" checks every dictation when the AI runs in the cloud (Claude or an
+    # OpenAI-style service), and only messy ones (self-corrections, lists, repeated words,
+    # fillers, long dictation) on the Mac model, so clean sentences stay instant; "always"; "off".
     "ai_editing": "smart",
     # Where the AI runs:
     #   "local"  - on this Mac: private, offline, free (downloads a ~2 GB model on first use)
@@ -58,6 +59,10 @@ DEFAULT_CONFIG = {
     # personal messages only) or "excited" (ends with "!"). Code editors never change.
     "app_styles": {"personal": "casual", "work": "formal", "email": "formal", "ai": "casual",
                    "other": "formal"},
+    # Read the conversation around your cursor as you start talking: names on screen are
+    # listened out for, and a cloud AI gets the text to fix words that don't fit. Never password
+    # fields or password managers; keys and passwords are blanked out. (menu → AI clean-up)
+    "read_context": True,
     "styles_paused": False,  # menu → Writing style → Pause styles: everything typed as you said it
     # keep listening this long after you let go, so the last word isn't cut off
     "tail_seconds": 0.25,

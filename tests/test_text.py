@@ -58,6 +58,26 @@ def test_self_correction_uses_ai():
     assert postprocess("meet on tuesday no wait wednesday", CFG, ed) == ("Meet on Wednesday.", True)
 
 
+def test_i_meant_is_a_correction_too():
+    # "iCloud, I meant iCloud." used to be typed as said: "I meant" didn't reach the AI
+    for said in ("iCloud, I meant iCloud.", "Have we seen, oh I meant had we seen it?",
+                 "Θέλω τρία, εννοώ τέσσερα."):
+        assert needs_ai(said, allow_non_latin=True)  # Greek goes to Claude, not the Mac model
+    assert not needs_ai("It means a lot.")
+    ed = FakeEditor("Had we seen it? Oh, I meant.")  # a leftover correction phrase is dropped
+    assert postprocess("have we seen it oh I meant had we seen it", CFG, ed) == ("Had we seen it?", True)
+
+
+def test_a_restated_correction_keeps_one_copy():
+    assert postprocess("iCloud, I meant iCloud.", CFG, None) == ("iCloud.", False)  # was "ICloud, I meant iCloud."
+    ed = FakeEditor("The meeting is at 4. I meant 4, so don't be late.")  # the Mac AI kept both
+    assert postprocess("the meeting is at three I meant four so don't be late", CFG, ed) == \
+        ("The meeting is at 4, so don't be late.", True)
+    for kept in ("What I meant for my pointing at the end", "I mean okay we could do that",
+                 "it typed have we seen and then oh I meant had we seen"):
+        assert postprocess(kept, dict(CFG, ai_editing="off"), None)[0].lower() == kept.lower()
+
+
 def test_ai_answering_is_rejected():
     assert not plausible_edit("what is the capital of france", "Here is the answer: Paris.")
 

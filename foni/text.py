@@ -10,16 +10,23 @@ FILLER_RE = re.compile(r"(?:,\s*)?\b(?:um+|uh+|erm+|uhm+|hmm+)\b[,.]?\s*", re.IG
 
 # Cues that the raw transcript would benefit from the AI editor ("smart" mode).
 CUE_RE = re.compile(
-    r"\b(?:no wait|wait no|i mean|actually|sorry|scratch that|or rather|let me rephrase|"
-    r"correction|no no|first(?:ly)?|second(?:ly)?|third(?:ly)?|number one|bullet point|"
-    r"όχι|δηλαδή|συγγνώμη|πρώτον|δεύτερον)\b", re.IGNORECASE)
+    r"\b(?:no wait|wait no|i mean|i meant|i wanted to say|make that|actually|sorry|scratch that|"
+    r"or rather|let me rephrase|correction|no no|first(?:ly)?|second(?:ly)?|third(?:ly)?|"
+    r"number one|bullet point|όχι|δηλαδή|συγγνώμη|εννοώ|εννοούσα|ήθελα να πω|πρώτον|δεύτερον)\b",
+    re.IGNORECASE)
 REPEAT_RE = re.compile(r"\b(\w+(?:\s+\w+)?),?\s+\1\b", re.IGNORECASE)
 # speech models write cut-off words as stray letters ("it's kind of s it's slower")
 STRAY_LETTER_RE = re.compile(r"(?<![\w'’.])(?![aAI]\b)[A-Za-z](?![\w'’.])")
 # A "sentence" that's only a correction phrase ("No wait.") is leftover after the AI applied it
 DANGLING_CUE_RE = re.compile(
-    r"(?:(?<=[.!?])|^)\s*(?:no,? wait|wait,? no|sorry|i mean|scratch that|or rather)[.!,]*\s*(?=$|\n)",
+    r"(?:(?<=[.!?])|^)\s*(?:no,? wait|wait,? no|sorry|(?:oh,? )?i meant?|scratch that|or rather)"
+    r"[.!,]*\s*(?=$|\n)",
     re.IGNORECASE)
+# "iCloud, I meant iCloud" (said again the same way), or an AI edit that kept "at 4. I meant 4":
+# only the second copy stays
+RESTATED_RE = re.compile(
+    r"\b((?:[\w'’-]+\s+){0,3}[\w'’-]+)[,.;]?\s+(?:oh,?\s+)?(?:i meant|i mean|no wait|sorry)[,.;:]?\s+"
+    r"(\1)\b", re.IGNORECASE)
 COUNTED_LIST_RE = re.compile(r"\bone\b.*\btwo\b.*\bthree\b", re.IGNORECASE | re.DOTALL)
 
 APP_STYLES = [
@@ -138,11 +145,13 @@ def _plain_words(s):
     return re.findall(r"[\w']+", s.replace("’", "'").lower())
 
 
-def faithful_edit(src, out, allowed=()):
+def faithful_edit(src, out, allowed=(), nearby=""):
     """A good cleanup only removes things (fillers, stutters, what you corrected away) and
     fixes punctuation; it keeps your words in your order. Rejects edits where more than ~15%
     of the words are new or moved — rewording, swapping names, mixing up corrections.
-    `allowed`: words the edit may bring in (vocabulary, learned corrections)."""
+    `allowed`: words the edit may bring in (vocabulary, learned corrections).
+    `nearby`: the text around your cursor; a few misheard words may be fixed to words from it
+    ("riding" → "writing"), but never more than about one in five."""
     src_w = _plain_words(src)
     present = set(src_w)
     ok_new = {w for phrase in allowed for w in _plain_words(phrase)}
@@ -151,7 +160,13 @@ def faithful_edit(src, out, allowed=()):
     if not out_w:
         return True
     sm = difflib.SequenceMatcher(None, src_w, out_w, autojunk=False)
-    kept_in_order = sum(b.size for b in sm.get_matching_blocks())
+    blocks = sm.get_matching_blocks()
+    kept_in_order = sum(b.size for b in blocks)
+    if nearby:
+        matched = {b.b + i for b in blocks for i in range(b.size)}
+        near = set(_plain_words(nearby))
+        from_screen = sum(1 for i, w in enumerate(out_w) if i not in matched and w in near)
+        kept_in_order += min(from_screen, max(2, len(src_w) // 5))
     return kept_in_order >= 0.85 * len(out_w)
 
 
@@ -161,29 +176,34 @@ def apply_phrases(text, mapping):
     return text
 
 
-def postprocess(text, cfg, editor=None, app="", learned=None):
-    """Returns (text, used_ai)."""
+def postprocess(text, cfg, editor=None, app="", learned=None, screen=None):
+    """Returns (text, used_ai). `screen`: the text around your cursor, for a cloud AI only."""
     text = text.replace("<unk>", "")
     if text.lower().strip() in HALLUCINATIONS:
         return "", False
     if cfg["remove_fillers"]:
         text = FILLER_RE.sub(" ", text)
     text = apply_phrases(text, cfg.get("replacements"))
-    text = re.sub(r"[ \t]{2,}", " ", text).strip()
+    text = RESTATED_RE.sub(r"\2", re.sub(r"[ \t]{2,}", " ", text).strip())
     used_ai = False
     mode = cfg["ai_editing"]
     hints = learned.hints_for(text) if learned else []  # [(heard, meant, times corrected)]
     cloud = cfg.get("ai_engine") in ("cloud", "openai")  # cloud AIs handle Greek; the Mac model doesn't
+    # Smart: in the cloud (about $0.0002 and a second each) every dictation is checked, so
+    # misheard words get fixed too; on the Mac only messy ones, so clean sentences stay instant.
     run_ai = editor is not None and text and (cloud or not mostly_non_latin(text)) and (
-        (mode == "always" and len(text.split()) >= 3)
-        or (mode == "smart" and (needs_ai(text, allow_non_latin=cloud) or hints)))
+        (mode == "always" and (cloud or len(text.split()) >= 3))
+        or (mode == "smart" and (cloud or needs_ai(text) or hints)))
+    screen = (screen or "").strip() if cloud else ""
     # `editor` may be a function that loads the model on demand (it's freed when idle)
     ed = (editor() if callable(editor) else editor) if run_ai else None
     if ed:
         vocab = list(cfg.get("vocabulary") or []) + [m for _, m, _ in hints]
-        edited = ed.clean(text, style_for(app), vocab, [(h, m) for h, m, _ in hints])
-        edited = DANGLING_CUE_RE.sub("", edited).strip()
-        if plausible_edit(text, edited) and faithful_edit(text, edited, vocab):
+        corr = [(h, m) for h, m, _ in hints]
+        edited = ed.clean(text, style_for(app), vocab, corr, screen) if screen else \
+            ed.clean(text, style_for(app), vocab, corr)
+        edited = RESTATED_RE.sub(r"\2", DANGLING_CUE_RE.sub("", edited).strip())
+        if plausible_edit(text, edited) and faithful_edit(text, edited, vocab, screen):
             text, used_ai = edited, True
         else:
             print(f"[ai] rejected edit, kept transcript: {edited!r}")
@@ -199,6 +219,7 @@ def postprocess(text, cfg, editor=None, app="", learned=None):
         text = re.sub(rf"\b{re.escape(trigger)}\b", lambda _m, f=full: f, text,
                       flags=re.IGNORECASE)
     text = re.sub(r"[ \t]{2,}", " ", text).strip()
-    # capitalize the start and anything after a sentence end / line break
-    text = re.sub(r"(^|[.!?]\s+|\n)([^\W\d_])", lambda m: m.group(1) + m.group(2).upper(), text)
+    # capitalize the start and anything after a sentence end / line break (not iCloud, iPhone, eBay)
+    text = re.sub(r"(^|[.!?]\s+|\n)([^\W\d_])(?![A-Z])", lambda m: m.group(1) + m.group(2).upper(),
+                  text)
     return text, used_ai
